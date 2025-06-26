@@ -52,5 +52,5 @@ def archive_and_remove(root_dir: Path, engine: str = "crystal") -> None:
 if __name__ == "__main__":
     import shutil
     
-    target_dir = "/root/projects/science_archiver/dir_for_test"   
+    target_dir = "/root/projects/science_archiver/dir"   
     archive_and_remove(target_dir, 'crystal')
