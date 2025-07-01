@@ -24,8 +24,16 @@ def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
         print(f"Error {source_dir}: {e}")
         return False
 
-def archive_and_remove(root_dir: Path, engine: str = "crystal") -> None:
+def archive_and_remove(root_dir: Path, engine: str = "crystal", make_report: bool = True) -> None:
     """Archive dir and remove orig files"""
+    if make_report:
+        error_dict = {}
+        if engine == "crystal":
+            from crystal_parser.error_crystal_parser import make_report 
+            from crystal_parser.error_crystal_parser import print_report
+        else:
+            raise NotImplementedError(f"Engine {engine} is not implemented for reporting errors.")
+        
     root_path = Path(root_dir)
     
     if not root_path.exists():
@@ -34,6 +42,10 @@ def archive_and_remove(root_dir: Path, engine: str = "crystal") -> None:
     
     # from bottom to top
     for dirpath, dirnames, filenames in os.walk(root_path, topdown=False):
+        if make_report:
+            # make report about errors
+            error_dict = make_report(dirpath, filenames, error_dict)
+            
         current_dir = Path(dirpath)
         
         if not os.listdir(current_dir):
@@ -48,9 +60,13 @@ def archive_and_remove(root_dir: Path, engine: str = "crystal") -> None:
         
         if compress_with_7z(current_dir, archive_path):
             shutil.rmtree(current_dir)
+            
+    if make_report:
+        print_report(error_dict)
+        print("Report with errors is ready.")
 
 if __name__ == "__main__":
     import shutil
     
-    target_dir = "/root/projects/science_archiver/dir"   
+    target_dir = "/root/projects/science_archiver/crystal_test"   
     archive_and_remove(target_dir, 'crystal')
