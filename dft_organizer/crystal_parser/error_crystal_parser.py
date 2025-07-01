@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+
 def make_report(root: Path, files: str, error_dict: dict = {}) -> dict:
     """
     Make report with error description for CRYSTAL calculations.
@@ -33,8 +34,8 @@ def print_report(error_dict: dict) -> None:
         for structure in structures:
             print(f"  - {structure}")
         print("\n")
-        
-        
+
+
 def save_report(error_dict: dict, report_path: Path) -> None:
     """
     Save report with error description to a file.
@@ -47,6 +48,3 @@ def save_report(error_dict: dict, report_path: Path) -> None:
             for structure in structures:
                 report_file.write(f"  - {structure}\n")
             report_file.write("\n")
-
-
-
