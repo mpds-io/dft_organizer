@@ -29,8 +29,7 @@ def archive_and_remove(root_dir: Path, engine: str = "crystal", make_report: boo
     if make_report:
         error_dict = {}
         if engine == "crystal":
-            from crystal_parser.error_crystal_parser import make_report 
-            from crystal_parser.error_crystal_parser import print_report
+            from crystal_parser.error_crystal_parser import make_report, print_report, save_report
         else:
             raise NotImplementedError(f"Engine {engine} is not implemented for reporting errors.")
         
@@ -64,6 +63,7 @@ def archive_and_remove(root_dir: Path, engine: str = "crystal", make_report: boo
     if make_report:
         print_report(error_dict)
         print("Report with errors is ready.")
+        save_report(error_dict, os.path.dirname(root_path) + f"/report_{engine}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt")
 
 if __name__ == "__main__":
     import shutil
