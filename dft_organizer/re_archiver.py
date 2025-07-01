@@ -43,5 +43,5 @@ def extract_and_process(archive_path):
 
 
 if __name__ == "__main__":
-    target_path = '/root/projects/science_archiver/dir_crystal_2025_06_26_16_43_46.7z'
+    target_path = '/root/projects/ab_initio_calculations/output_crystal_2025_06_26_16_30_27.7z'
     restore_archives_recursive(target_path)
