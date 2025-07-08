@@ -1,7 +1,9 @@
 import os
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
 import click
 
 
@@ -34,7 +36,7 @@ def archive_and_remove(
     if make_report:
         error_dict = {}
         if engine == "crystal":
-            from crystal_parser.error_crystal_parser import (
+            from dft_organizer.crystal_parser.error_crystal_parser import (
                 make_report,
                 print_report,
                 save_report,
@@ -80,17 +82,20 @@ def archive_and_remove(
             + f"/report_{engine}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt",
         )
 
+
 @click.command()
 @click.option(
-    "--path", required=True, type=click.Path(exists=True, file_okay=False),
-    help="Path to the directory to be archived"
+    "--path",
+    required=True,
+    type=click.Path(exists=True, file_okay=False),
+    help="Path to the directory to be archived",
 )
 @click.option(
-    "--engine", default="crystal", help="Name of the engine for error parsing. Default is 'crystal'."
+    "--engine",
+    default="crystal",
+    help="Name of the engine for error parsing. Default is 'crystal'.",
 )
-@click.option(
-    "--report/--no-report", default=True, help="Создавать отчёт об ошибках"
-)
+@click.option("--report/--no-report", default=True, help="Создавать отчёт об ошибках")
 def cli(path, engine, report):
     """Archive a directory, make report remove original files."""
     archive_and_remove(Path(path), engine, make_report=report)

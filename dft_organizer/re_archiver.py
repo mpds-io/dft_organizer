@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+
 import click
 
 
@@ -45,18 +46,18 @@ def extract_and_process(archive_path):
         # restore archives in extracted dir
         restore_archives_recursive(target_dir)
 
+
 @click.command()
 @click.option(
-    "--path", required=True, type=click.Path(exists=True),
-    help="Path to the 7z archive or directory containing archives"
+    "--path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to the 7z archive or directory containing archives",
 )
 def cli(path):
     """Unpack 7z archive or restore archives in a directory."""
     restore_archives_recursive(Path(path))
-    
+
 
 if __name__ == "__main__":
-    target_path = (
-        "/root/projects/science_archiver/crystal_test_crystal_2025_07_01_19_55_44.7z"
-    )
-    restore_archives_recursive(target_path)
+    cli()
