@@ -1,0 +1,17 @@
+[project]
+name = "dft-organizer"
+version = "0.1.0"
+description = "DFT organizer with error parsing and archiving"
+authors = [{ name = "Alina Zhidkovskaya", email = "alina@mpds.io" }]
+dependencies = [
+    "click>=8.1"
+]
+requires-python = ">=3.11"
+
+[project.scripts]
+dft-pack = "dft_organizer.archiver:cli"
+dft-unpack = "dft_organizer.re_archiver:cli"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

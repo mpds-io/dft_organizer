@@ -2,6 +2,7 @@ import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import click
 
 
 def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
@@ -79,9 +80,21 @@ def archive_and_remove(
             + f"/report_{engine}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt",
         )
 
+@click.command()
+@click.option(
+    "--path", required=True, type=click.Path(exists=True, file_okay=False),
+    help="Path to the directory to be archived"
+)
+@click.option(
+    "--engine", default="crystal", help="Name of the engine for error parsing. Default is 'crystal'."
+)
+@click.option(
+    "--report/--no-report", default=True, help="Создавать отчёт об ошибках"
+)
+def cli(path, engine, report):
+    """Archive a directory, make report remove original files."""
+    archive_and_remove(Path(path), engine, make_report=report)
+
 
 if __name__ == "__main__":
-    import shutil
-
-    target_dir = "/root/projects/science_archiver/crystal_test"
-    archive_and_remove(target_dir, "crystal")
+    cli()
