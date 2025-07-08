@@ -22,9 +22,24 @@ The tool also supports unpacking 7z archives and restoring archived calculation 
 ## Installation
 
 Requires Python >= 3.11  
-Dependencies: `click>=8.1`
+Dependencies: 
+`click>=8.1`
 
 Install via pip:
 
 ```bash
 pip install .
+```
+
+## Command-line Interface
+
+### Archive a directory and make report
+
+```bash
+dft-pack --path <directory_path> [--engine <engine_name>] [--report / --no-report]
+```
+
+### Unpack an archive 
+```bash
+dft-unpack --path <archive_or_directory_path>
+```
