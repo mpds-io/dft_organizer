@@ -6,7 +6,7 @@ Tilde Materials Informatics and Materials Platform for Data Science LLC
 
 ---
 
-## Project Description
+## About
 
 `dft-organizer` is a command-line tool designed to manage data from DFT (Density Functional Theory) calculations performed with the Crystal engine (also implies FLEUR support).  
 It automates archiving of calculation directories and generates detailed error reports by parsing Crystal output files.  
@@ -40,3 +40,26 @@ dft-pack --path <directory_path> [--engine <engine_name>] [--report / --no-repor
 ```bash
 dft-unpack --path <archive_or_directory_path>
 ```
+
+## Python API
+
+In addition to the command-line interface, `dft-organizer` provides a Python API for integration into custom scripts and workflows.
+
+### Example: Archive a directory and generate an error report
+
+```python
+from pathlib import Path
+from dft_organizer.archiver import archive_and_remove
+
+archive_and_remove(Path("./my_calc_dir"), engine="crystal", make_report=True)
+```
+
+### Example: Restore archived .7z files
+
+```python
+from pathlib import Path
+from dft_organizer.re_archiver import restore_archives_recursive
+
+restore_archives_recursive(Path("./archive_dir"))
+```
+
