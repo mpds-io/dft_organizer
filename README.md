@@ -1,11 +1,8 @@
 # dft-organizer
 
-**Version:** 0.1.0  
-**Author:** [Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030) and [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947)
+[Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030) and [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947)
 <br />
 Tilde Materials Informatics and Materials Platform for Data Science LLC
-
-**Description:** DFT organizer with error parsing and archiving, specialized for Crystal DFT calculations.
 
 ---
 
