@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-def make_report_fleur(root: Path, files: list[str], error_dict: dict = {}) -> dict:
+def make_report(root: Path, files: list[str], error_dict: dict = {}) -> dict:
     """
     Make report with error description for FLEUR calculations.
     """
@@ -44,15 +44,20 @@ def make_report_fleur(root: Path, files: list[str], error_dict: dict = {}) -> di
 
         structure_name = Path(root).name
 
-        for err in errors:
-            if err not in error_dict:
-                error_dict[err] = []
-            error_dict[err].append(structure_name)
+        if errors:
+            for err in errors:
+                if err not in error_dict:
+                    error_dict[err] = []
+                error_dict[err].append(structure_name)
+        else:
+            if "No errors found" not in error_dict:
+                error_dict["No errors found"] = []
+            error_dict["No errors found"].append(structure_name)
 
     return error_dict
 
 
-def print_report_fleur(error_dict: dict) -> None:
+def print_report(error_dict: dict) -> None:
     """
     Print report with error description for FLEUR calculations.
     """
@@ -67,7 +72,7 @@ def print_report_fleur(error_dict: dict) -> None:
         print("\n")
 
 
-def save_report_fleur(error_dict: dict, report_path: Path) -> None:
+def save_report(error_dict: dict, report_path: Path) -> None:
     """
     Save report with error description for FLEUR calculations.
     """
