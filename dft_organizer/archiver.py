@@ -41,6 +41,12 @@ def archive_and_remove(
                 print_report,
                 save_report,
             )
+        elif engine == "fleur":
+            from dft_organizer.fleur_parser.error_fleur_parser import (
+                make_report,
+                print_report,
+                save_report,
+            )
         else:
             raise NotImplementedError(
                 f"Engine {engine} is not implemented for reporting errors."
