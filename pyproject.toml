@@ -8,7 +8,7 @@ dependencies = [
     "pycrystal",
     "ase-fleur @ git+https://github.com/blokhin/ase-fleur", # 0.0.2a patch
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 
 [project.scripts]
 dft-pack = "dft_organizer.archiver:cli"
