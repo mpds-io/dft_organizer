@@ -48,7 +48,7 @@ def get_fleur_table_string(fleur_res):
     lines.append("-"*40)
 
     for key, label in [('total_energy', 'Total Energy (a.u.)'),
-                       ('cpu_time', 'Calculation Time (s)'),
+                       ('cpu_time', 'Calculation Time (m)'),
                        ('s_pop', 's-population'),
                        ('p_pop', 'p-population'),
                        ('d_pop', 'd-population'),
