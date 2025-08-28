@@ -19,7 +19,7 @@ def parse_fleur_output(filename):
 
     time_match = re.search(r'Total execution time:\s*(\d+)sec', content)
     if time_match:
-        results['cpu_time'] = float(time_match.group(1))
+        results['cpu_time'] = float(time_match.group(1)) / 3600
 
     bandgap_match = re.search(r'bandgap\s*:\s*([\d\.E+-]+)\s*htr', content, re.IGNORECASE)
     if not bandgap_match:
@@ -58,8 +58,3 @@ def get_fleur_table_string(fleur_res):
         lines.append(f"{label:<20} {val:<20}")
 
     return "\n".join(lines)
-
-
-fleur_res = parse_fleur_output("output_fleur/20250623_171647_827/out")
-table_str = get_fleur_table_string(fleur_res)
-print(table_str)

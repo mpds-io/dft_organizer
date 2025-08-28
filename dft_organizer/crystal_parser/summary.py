@@ -32,7 +32,10 @@ def parse_content(path: Path):
         bandgap = content['conduction'][-1].get('band_gap', None)
 
     # duration, energy 
-    cpu_time = float(content.get('duration', 0))
+    try:
+        cpu_time = float(content['duration'])
+    except:
+        cpu_time = None
     total_energy = content.get('energy', None)
 
     return {
