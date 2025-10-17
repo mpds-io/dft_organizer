@@ -67,6 +67,6 @@ def get_crystal_table_string(crystal_res: dict):
     return "\n".join(lines)
 
 if __name__ == "__main__":
-    res = parse_content("output_crystal/20250628_115541_8/OUTPUT")
+    res = parse_content("/root/projects/dft_organizer/playground_data/20250701_124402_81/OUTPUT")
     table = get_crystal_table_string(res)
     print(table)

@@ -5,7 +5,8 @@ from datetime import datetime
 from pathlib import Path
 
 import click
-
+from dft_organizer.crystal_parser.summary import parse_content, get_crystal_table_string
+import pandas as pd
 
 def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
     """Compress dir using 7z and remove orig files"""
@@ -33,6 +34,8 @@ def archive_and_remove(
     root_dir: Path, engine: str = "crystal", make_report: bool = True
 ) -> None:
     """Archive dir and remove orig files"""
+    summary_store = []
+    
     if make_report:
         error_dict = {}
         if engine == "crystal":
@@ -60,17 +63,21 @@ def archive_and_remove(
 
     # from bottom to top
     for dirpath, dirnames, filenames in os.walk(root_path, topdown=False):
+        current_dir = Path(dirpath)
         if make_report:
             # make report about errors
             error_dict = make_report(dirpath, filenames, error_dict)
-
-        current_dir = Path(dirpath)
+            # TODO: for fleur output
+            if 'OUTPUT' in filenames:
+                summary = parse_content(Path.joinpath(current_dir, Path('OUTPUT')))
+                summary_store.append(summary)
+                print(get_crystal_table_string(summary))
 
         if not os.listdir(current_dir):
             continue
 
         if root_path == current_dir:
-            archive_name = f"{current_dir.name}_{engine}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.7z"
+            archive_name = f"{current_dir.name}.7z"
         else:
             archive_name = f"{current_dir.name}.7z"
 
@@ -87,6 +94,13 @@ def archive_and_remove(
             os.path.dirname(root_path)
             + f"/report_{engine}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt",
         )
+        
+    df = pd.DataFrame(summary_store)
+    df.to_csv(
+        root_path.parent / f"summary_{engine}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv",
+        index=False
+    )
+    return df
 
 
 @click.command()
@@ -108,4 +122,4 @@ def cli(path, engine, report):
 
 
 if __name__ == "__main__":
-    cli()
+    archive_and_remove('/root/projects/dft_organizer/playground_data', engine='crystal', make_report=True)
