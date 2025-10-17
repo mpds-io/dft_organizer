@@ -86,4 +86,4 @@ def cli(path):
 
 
 if __name__ == "__main__":
-    restore_archives_iterative(Path('aiida_playground_data.7z'))
+    restore_archives_iterative(Path('output_crystal.7z'))

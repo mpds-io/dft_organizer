@@ -59,3 +59,5 @@ out.xml
 *.temp
 *.bak
 *.backup
+
+/aiida_playground_data_old

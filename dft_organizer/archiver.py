@@ -178,4 +178,4 @@ def cli(path, engine, report, aiida):
 
 
 if __name__ == "__main__":
-    archive_and_remove('aiida_playground_data', engine='crystal', make_report=True, aiida=True)
+    archive_and_remove('output_crystal', engine='crystal', make_report=True, aiida=False)
