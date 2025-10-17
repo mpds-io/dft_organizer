@@ -61,5 +61,5 @@ def cli(path):
 
 if __name__ == "__main__":
     # cli()
-    restore_archives_recursive(Path('/root/projects/dft_organizer/playground_data.7z'))
+    restore_archives_recursive(Path('playground_data.7z'))
     

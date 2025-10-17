@@ -122,4 +122,5 @@ def cli(path, engine, report):
 
 
 if __name__ == "__main__":
-    archive_and_remove('/root/projects/dft_organizer/playground_data', engine='crystal', make_report=True)
+    # cli()
+    archive_and_remove('playground_data', engine='crystal', make_report=True)
