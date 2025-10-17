@@ -1,0 +1,61 @@
+# Data files
+*.csv
+*.json
+*.txt
+*.7z
+
+# Build directories
+build/
+dist/
+*.egg-info/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyc
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Output directories and calculation files
+output_crystal/
+output_fleur/
+fort.*
+INPUT
+OUTPUT
+out.xml
+*.out
+
+# Archives
+*.tar
+*.tar.gz
+*.zip
+*.rar
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
