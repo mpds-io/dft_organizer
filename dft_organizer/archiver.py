@@ -58,6 +58,123 @@ def extract_uuid_from_path(output_path: Path, root_path: Path) -> str:
         return ""
 
 
+def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
+    """Find calculation directory by UUID in AiiDA structure"""
+    root_path = Path(root_dir).resolve()
+    
+    if not root_path.exists():
+        raise FileNotFoundError(f"Directory does not exist: {root_path}")
+    
+    # extract parts from UUID: first 2 chars, next 2 chars, rest
+    if len(uuid) < 4:
+        raise ValueError(f"UUID too short: {uuid}")
+    
+    first_dir = uuid[:2]
+    second_dir = uuid[2:4]
+    calc_dir = uuid[4:]
+    
+    expected_path = root_path / first_dir / second_dir / calc_dir
+    
+    if expected_path.exists():
+        return expected_path
+    
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        current_dir = Path(dirpath)
+        extracted_uuid = extract_uuid_from_path(current_dir, root_path)
+        
+        if extracted_uuid == uuid:
+            return current_dir
+    
+    raise FileNotFoundError(f"Calculation with UUID {uuid} not found in {root_path}")
+
+
+def generate_report_for_uuid(root_dir: Path, uuid: str, engine: str = "crystal") -> dict:
+    """Generate report for a specific calculation by UUID"""
+    try:
+        calc_dir = find_calculation_by_uuid(root_dir, uuid)
+        print(f"Found calculation at: {calc_dir}")
+        
+        # Get list of files in directory
+        filenames = [f.name for f in calc_dir.iterdir() if f.is_file()]
+        
+        # Check for errors using the appropriate engine
+        error_dict = {}
+        if engine == "crystal":
+            from dft_organizer.crystal_parser.error_crystal_parser import (
+                make_report,
+                print_report,
+                save_report,
+            )
+        elif engine == "fleur":
+            from dft_organizer.fleur_parser.error_fleur_parser import (
+                make_report,
+                print_report,
+                save_report,
+            )
+        else:
+            raise NotImplementedError(
+                f"Engine {engine} is not implemented for reporting errors."
+            )
+        
+        # Generate error report for this calculation
+        error_dict = make_report(str(calc_dir), filenames, {})
+        
+        # Parse OUTPUT if exists
+        output_file = calc_dir / 'OUTPUT'
+        summary = None
+        
+        if output_file.exists():
+            summary = parse_content(output_file)
+            summary['output_path'] = str(output_file)
+            summary['uuid'] = uuid
+        else:
+            print(f"OUTPUT file not found in {calc_dir}")
+            summary = {
+                'output_path': str(calc_dir),
+                'uuid': uuid,
+                'error': 'OUTPUT file not found'
+            }
+        
+        # Print results
+        print("\n" + "="*60)
+        print(f"CALCULATION REPORT FOR UUID: {uuid}")
+        print("="*60)
+        
+        if 'error' not in summary:
+            print(get_crystal_table_string(summary))
+        
+        print("\n--- ERROR REPORT ---")
+        print_report(error_dict)
+        print("="*60)
+        
+        # Save reports
+        root_path = Path(root_dir).resolve()
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Save summary CSV
+        if summary:
+            summary_file = root_path.parent / f"summary_uuid_{uuid}_{timestamp}.csv"
+            df = pd.DataFrame([summary])
+            df.to_csv(summary_file, index=False)
+            print(f"\nSummary saved to: {summary_file}")
+        
+        # Save error report
+        error_report_file = root_path.parent / f"errors_uuid_{uuid}_{timestamp}.txt"
+        save_report(error_dict, str(error_report_file))
+        print(f"Error report saved to: {error_report_file}")
+        
+        return summary
+        
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 def archive_and_remove(
     root_dir: Path, engine: str = "crystal", make_report: bool = True, aiida: bool = False
 ) -> None:
@@ -158,7 +275,13 @@ def archive_and_remove(
     return df if summary_store else None
 
 
-@click.command()
+@click.group()
+def cli():
+    """DFT Organizer - Archive and analyze DFT calculations"""
+    pass
+
+
+@cli.command()
 @click.option(
     "--path",
     required=True,
@@ -172,10 +295,34 @@ def archive_and_remove(
 )
 @click.option("--report/--no-report", default=True, help="Create error report")
 @click.option("--aiida/--no-aiida", default=False, help="AiiDA mode - extract UUID from path")
-def cli(path, engine, report, aiida):
+def archive(path, engine, report, aiida):
     """Archive directory, create report and remove original files."""
     archive_and_remove(Path(path), engine, make_report=report, aiida=aiida)
 
 
+@cli.command()
+@click.option(
+    "--path",
+    required=True,
+    type=click.Path(exists=True, file_okay=False),
+    help="Root directory containing calculations",
+)
+@click.option(
+    "--uuid",
+    required=True,
+    type=str,
+    help="UUID of the calculation (e.g., 0ea8a6be-7199-4c3e-9263-fae76e8d081e)",
+)
+@click.option(
+    "--engine",
+    default="crystal",
+    help="Engine name for parsing. Default is 'crystal'.",
+)
+def report(path, uuid, engine):
+    """Generate report for a specific calculation by UUID."""
+    clean_uuid = uuid.replace('-', '')
+    generate_report_for_uuid(Path(path), clean_uuid, engine)
+
 if __name__ == "__main__":
-    archive_and_remove('output_crystal', engine='crystal', make_report=True, aiida=False)
+    cli()
+    # generate_report_for_uuid(Path("/data/aiida"), "1c32049e-93a9-4681-acf6-e938247dd71b", engine="crystal")
