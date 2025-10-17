@@ -135,7 +135,6 @@ def generate_report_for_uuid(root_dir: Path, uuid: str, engine: str = "crystal")
                 'error': 'OUTPUT file not found'
             }
         
-        # Print results
         print("\n" + "="*60)
         print(f"CALCULATION REPORT FOR UUID: {uuid}")
         print("="*60)
@@ -147,11 +146,10 @@ def generate_report_for_uuid(root_dir: Path, uuid: str, engine: str = "crystal")
         print_report(error_dict)
         print("="*60)
         
-        # Save reports
         root_path = Path(root_dir).resolve()
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Save summary CSV
+        # save summary
         if summary:
             summary_file = root_path.parent / f"summary_uuid_{uuid}_{timestamp}.csv"
             df = pd.DataFrame([summary])
@@ -291,7 +289,7 @@ def cli():
 @click.option(
     "--engine",
     default="crystal",
-    help="Engine name for error parsing. Default is 'crystal'.",
+    help="DFT engine name. Default is 'crystal'.",
 )
 @click.option("--report/--no-report", default=True, help="Create error report")
 @click.option("--aiida/--no-aiida", default=False, help="AiiDA mode - extract UUID from path")
@@ -316,7 +314,7 @@ def archive(path, engine, report, aiida):
 @click.option(
     "--engine",
     default="crystal",
-    help="Engine name for parsing. Default is 'crystal'.",
+    help="DFT engine name. Default is 'crystal'.",
 )
 def report(path, uuid, engine):
     """Generate report for a specific calculation by UUID."""

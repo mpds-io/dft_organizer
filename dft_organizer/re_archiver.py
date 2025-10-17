@@ -182,7 +182,7 @@ def restore_archives_iterative(start_path: Path, engine: str = "crystal", genera
             if extract_7z(archive_path, target_dir):
                 archive_path.unlink()
             else:
-                print(f"  ⚠ Skipping: failed to extract {archive_path}")
+                print(f"  Skipping: failed to extract {archive_path}")
     
     # generate reports after all extraction is complete
     if generate_reports:
@@ -199,7 +199,7 @@ def restore_archives_iterative(start_path: Path, engine: str = "crystal", genera
 @click.option(
     "--engine",
     default="crystal",
-    help="Engine name for parsing. Default is 'crystal'.",
+    help="DFT engine name. Default is 'crystal'.",
 )
 @click.option(
     "--report/--no-report",
