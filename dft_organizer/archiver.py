@@ -39,6 +39,25 @@ def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
         return False
 
 
+def extract_uuid_from_path(output_path: Path, root_path: Path) -> str:
+    """Extract UUID from AiiDA path structure"""
+    try:
+        relative_path = output_path.relative_to(root_path)
+        parts = relative_path.parts
+        
+        if len(parts) >= 3:
+            first_part = parts[0]
+            second_part = parts[1]
+            third_part = parts[2]
+            
+            uuid = f"{first_part}{second_part}{third_part}"
+            return uuid
+        
+        return ""
+    except (ValueError, IndexError):
+        return ""
+
+
 def archive_and_remove(
     root_dir: Path, engine: str = "crystal", make_report: bool = True, aiida: bool = False
 ) -> None:
@@ -85,7 +104,15 @@ def archive_and_remove(
             error_dict = make_report(str(current_dir), filenames, error_dict)
             
             if 'OUTPUT' in filenames:
-                summary = parse_content(current_dir / 'OUTPUT')
+                output_path = current_dir / 'OUTPUT'
+                summary = parse_content(output_path)
+                
+                summary['output_path'] = str(output_path)
+                
+                if aiida:
+                    uuid = extract_uuid_from_path(output_path, root_path)
+                    summary['uuid'] = uuid
+                
                 summary_store.append(summary)
                 print(get_crystal_table_string(summary))
 
@@ -144,7 +171,7 @@ def archive_and_remove(
     help="Engine name for error parsing. Default is 'crystal'.",
 )
 @click.option("--report/--no-report", default=True, help="Create error report")
-@click.option("--aiida/--no-aiida", default=False, help="AiiDA mode")
+@click.option("--aiida/--no-aiida", default=False, help="AiiDA mode - extract UUID from path")
 def cli(path, engine, report, aiida):
     """Archive directory, create report and remove original files."""
     archive_and_remove(Path(path), engine, make_report=report, aiida=aiida)
