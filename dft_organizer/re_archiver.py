@@ -86,4 +86,5 @@ def cli(path):
 
 
 if __name__ == "__main__":
-    restore_archives_iterative(Path('output_crystal.7z'))
+    cli()
+    # restore_archives_iterative(Path('output_crystal.7z'))
