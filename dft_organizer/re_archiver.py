@@ -1,6 +1,5 @@
 import subprocess
 from pathlib import Path
-
 import click
 
 
@@ -10,41 +9,68 @@ def extract_7z(archive_path, target_dir):
         cmd = [
             "7z",
             "x",
-            f"-o{target_dir}",  # dir for unpacking
+            f"-o{target_dir}",
             "-y",
             str(archive_path),
         ]
-        subprocess.run(cmd, check=True)
+        print(f"Extracting {archive_path}...")
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"Error during unpack {archive_path}: {e}")
+        print(f"Error extracting {archive_path}: {e}")
         return False
 
 
-def restore_archives_recursive(start_path: Path):
-    """Recursively restore archives from a given path"""
+def restore_archives_iterative(start_path: Path):
+    """Iteratively restore archives level by level"""
     start_path = Path(start_path)
-
-    # if path to file - check if it is archive
-    if start_path.suffix == ".7z":
-        extract_and_process(start_path)
+    
+    if start_path.is_file() and start_path.suffix == ".7z":
+        print(f"=== Extracting root archive {start_path.name} ===")
+        
+        target_dir = start_path.parent
+        
+        if extract_7z(start_path, target_dir):
+            archive_name = start_path.stem
+            start_path.unlink()
+            
+            extracted_dir = target_dir / archive_name
+            
+            if not extracted_dir.exists():
+                print(f"Extracted directory not found: {extracted_dir}")
+                return
+                
+            start_path = extracted_dir
+        else:
+            print("Failed to extract root archive")
+            return
+    
+    if not start_path.is_dir():
+        print(f"Path {start_path} is not a directory")
         return
-
-    # if path to dir - search for archives
-    for archive in start_path.glob("**/*.7z"):
-        extract_and_process(archive)
-
-
-def extract_and_process(archive_path):
-    """Restore archive and remove it after extraction"""
-    archive_path = Path(archive_path)
-    original_dir_name = archive_path.stem
-    target_dir = archive_path.parent / original_dir_name
-
-    if extract_7z(archive_path, target_dir):
-        archive_path.unlink()
-        # restore archives in extracted dir
-        restore_archives_recursive(target_dir)
+    
+    iteration = 0
+    while True:
+        iteration += 1
+        print(f"\n--- Iteration {iteration} ---")
+        
+        archives = list(start_path.glob("**/*.7z"))
+        
+        if not archives:
+            print("✓ No more archives found. Done!")
+            break
+        
+        print(f"Found archives: {len(archives)}")
+        
+        for archive_path in archives:
+            target_dir = archive_path.parent
+            
+            print(f"  Extracting: {archive_path.relative_to(start_path)}")
+            
+            if extract_7z(archive_path, target_dir):
+                archive_path.unlink()
+            else:
+                print(f"  ⚠ Skipping: failed to extract {archive_path}")
 
 
 @click.command()
@@ -56,10 +82,8 @@ def extract_and_process(archive_path):
 )
 def cli(path):
     """Unpack 7z archive or restore archives in a directory."""
-    restore_archives_recursive(Path(path))
+    restore_archives_iterative(Path(path))
 
 
 if __name__ == "__main__":
-    # cli()
-    restore_archives_recursive(Path('playground_data.7z'))
-    
+    restore_archives_iterative(Path('aiida_playground_data.7z'))

@@ -1,9 +1,22 @@
-from pycrystal import CRYSTOUT
+from pycrystal import CRYSTOUT, CRYSTOUT_Error
 from pathlib import Path
+
 
 def parse_content(path: Path):
     """Parse CRYSTAL output file safely using dictionary-style access"""
-    content: dict = CRYSTOUT(path).info  
+    try:
+        content: dict = CRYSTOUT(str(path)).info
+    except CRYSTOUT_Error as e:
+        print(f"CRYSTAL OUTPUT file: {path} is not readable!")
+        return {
+            'bandgap': None,
+            'cpu_time': None,
+            'total_energy': None,
+            's_pop': None,
+            'p_pop': None,
+            'd_pop': None,
+            'total_pop': None
+        }
 
     # electrons -> basis_set -> bs
     mulliken_dict = {}
