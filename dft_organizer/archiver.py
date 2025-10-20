@@ -317,6 +317,6 @@ def report(path, uuid):
 
 
 if __name__ == "__main__":
-    # cli()
-    archive_and_remove(Path("/root/projects/dft_organizer/output_fleur_crystal"))
+    cli()
+    # archive_and_remove(Path("/root/projects/dft_organizer/output_fleur_crystal"))
 
