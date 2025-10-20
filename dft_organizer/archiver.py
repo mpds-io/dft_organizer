@@ -6,7 +6,18 @@ from pathlib import Path
 
 import click
 from dft_organizer.crystal_parser.summary import parse_content, get_crystal_table_string
-import pandas as pd
+from dft_organizer.fleur_parser.summary import parse_fleur_output
+import pandas as pd 
+
+def detect_engine(filenames: list) -> str:
+    """Detect DFT engine based on presence of specific files"""
+    if 'OUTPUT' in filenames or 'INPUT' in filenames:
+        return 'crystal'
+    elif 'fleur.out' in filenames or 'inp.xml' in filenames:
+        return 'fleur'
+    else:
+        # by default assume crystal
+        return 'crystal'
 
 
 def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
@@ -177,27 +188,8 @@ def archive_and_remove(
     root_dir: Path, engine: str = "crystal", make_report: bool = True, aiida: bool = False
 ) -> None:
     """Archive directories recursively and remove original files"""
+    error_dict = {}
     summary_store = []
-    
-    if make_report:
-        error_dict = {}
-        if engine == "crystal":
-            from dft_organizer.crystal_parser.error_crystal_parser import (
-                make_report,
-                print_report,
-                save_report,
-            )
-        elif engine == "fleur":
-            from dft_organizer.fleur_parser.error_fleur_parser import (
-                make_report,
-                print_report,
-                save_report,
-            )
-        else:
-            raise NotImplementedError(
-                f"Engine {engine} is not implemented for reporting errors."
-            )
-
     root_path = Path(root_dir).resolve()
 
     if not root_path.exists():
@@ -216,11 +208,23 @@ def archive_and_remove(
 
     for current_dir, dirnames, filenames in dirs_to_process:
         if make_report:
-            error_dict = make_report(str(current_dir), filenames, error_dict)
-            
+            engine = detect_engine(filenames)
             if 'OUTPUT' in filenames:
                 output_path = current_dir / 'OUTPUT'
                 summary = parse_content(output_path)
+                
+                summary['output_path'] = str(output_path)
+                
+                if aiida:
+                    uuid = extract_uuid_from_path(output_path, root_path)
+                    summary['uuid'] = uuid
+                    
+                summary_store.append(summary)
+                print(get_crystal_table_string(summary))
+                
+            elif 'out' in filenames:
+                output_path = current_dir / 'out'
+                summary = parse_fleur_output(output_path)
                 
                 summary['output_path'] = str(output_path)
                 
@@ -231,6 +235,20 @@ def archive_and_remove(
                 summary_store.append(summary)
                 print(get_crystal_table_string(summary))
 
+            if engine == "crystal":
+                from dft_organizer.crystal_parser.error_crystal_parser import (
+                    make_report,
+                    print_report,
+                    save_report,
+                )
+            elif engine == "fleur":
+                from dft_organizer.fleur_parser.error_fleur_parser import (
+                    make_report,
+                    print_report,
+                    save_report,
+                )
+            error_dict = make_report(str(current_dir), filenames, error_dict)
+                
         if not any(current_dir.iterdir()):
             print(f"Skipping empty directory: {current_dir}")
             continue
@@ -322,5 +340,5 @@ def report(path, uuid, engine):
     generate_report_for_uuid(Path(path), clean_uuid, engine)
 
 if __name__ == "__main__":
-    cli()
-    # generate_report_for_uuid(Path("/data/aiida"), "1c32049e-93a9-4681-acf6-e938247dd71b", engine="crystal")
+    # cli()
+    archive_and_remove(Path("/root/projects/dft_organizer/output_fleur"), engine="crystal")
