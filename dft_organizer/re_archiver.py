@@ -5,7 +5,7 @@ import os
 import click
 import pandas as pd
 
-from dft_organizer.crystal_parser.summary import parse_content
+from dft_organizer.crystal_parser.summary import parse_crystal_output
 
 
 def extract_7z(archive_path, target_dir):
@@ -89,7 +89,7 @@ def generate_reports_after_extraction(root_dir: Path, engine: str = "crystal", a
             output_path = current_dir / 'OUTPUT'
             
             try:
-                summary = parse_content(output_path)
+                summary = parse_crystal_output(output_path)
                 summary['output_path'] = str(output_path)
                 
                 if aiida:
@@ -217,4 +217,4 @@ def cli(path, engine, report, aiida):
 
 
 if __name__ == "__main__":
-    restore_archives_iterative(Path('aiida_playground_data.7z'), engine='crystal', generate_reports=True, aiida=False)
+    restore_archives_iterative(Path('/root/projects/dft_organizer/output_fleur_crystal.7z'), engine='fleur', generate_reports=True, aiida=False)

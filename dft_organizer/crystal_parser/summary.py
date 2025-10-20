@@ -2,7 +2,7 @@ from pycrystal import CRYSTOUT, CRYSTOUT_Error
 from pathlib import Path
 
 
-def parse_content(path: Path):
+def parse_crystal_output(path: Path):
     """Parse CRYSTAL output file safely using dictionary-style access"""
     try:
         content: dict = CRYSTOUT(str(path)).info
@@ -61,25 +61,6 @@ def parse_content(path: Path):
         'total_pop': total_pop
     }
 
-def get_crystal_table_string(crystal_res: dict):
-    """Builds a table string from CRYSTAL results"""
-    lines = []
-    lines.append(f"{'Parameter':<20} {'CRYSTAL23':<20}")
-    lines.append("-"*40)
-
-    for key, label in [('total_energy', 'Total Energy (a.u.)'),
-                       ('cpu_time', 'Calculation Time (m)'),
-                       ('s_pop', 's-population'),
-                       ('p_pop', 'p-population'),
-                       ('d_pop', 'd-population'),
-                       ('total_pop', 'Total population'),
-                       ('bandgap', 'Band Gap (eV)')]:
-        val = crystal_res.get(key, 'N/A')
-        lines.append(f"{label:<20} {val if val is not None else 'N/A':<20}")
-
-    return "\n".join(lines)
-
 if __name__ == "__main__":
-    res = parse_content("/root/projects/dft_organizer/playground_data/20250701_124402_81/OUTPUT")
-    table = get_crystal_table_string(res)
-    print(table)
+    res = parse_crystal_output("/root/projects/dft_organizer/playground_data/20250701_124402_81/OUTPUT")
+    print(res)

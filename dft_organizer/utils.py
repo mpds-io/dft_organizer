@@ -1,9 +1,38 @@
 
-from dft_organizer.crystal_parser.summary import parse_content as parse_crystal_output
+from dft_organizer.crystal_parser.summary import parse_crystal_output
 from dft_organizer.fleur_parser.summary import parse_fleur_output
 import pandas as pd
 
 
+def get_table_string(res: dict):
+    """Builds a table string from results"""
+    lines = []
+    lines.append(f"{'Parameter':<20} {'Value':<20}")
+    lines.append("-"*40)
+
+    for key, label in [('total_energy', 'Total Energy (a.u.)'),
+                       ('cpu_time', 'Calculation Time (m)'),
+                       ('s_pop', 's-population'),
+                       ('p_pop', 'p-population'),
+                       ('d_pop', 'd-population'),
+                       ('total_pop', 'Total population'),
+                       ('bandgap', 'Band Gap (eV)')]:
+        val = res.get(key, 'N/A')
+        lines.append(f"{label:<20} {val if val is not None else 'N/A':<20}")
+
+    return "\n".join(lines)
+
+def detect_engine(filenames: list) -> str:
+    """Detect DFT engine based on presence of specific files"""
+    if 'OUTPUT' in filenames or 'INPUT' in filenames:
+        return 'crystal'
+    elif 'fleur.out' in filenames or 'inp.xml' in filenames or 'out' in filenames:
+        return 'fleur'
+    else:
+        # by default assume crystal
+        return 'crystal'
+    
+    
 def create_summary_table(path_dict: dict):
     """Create summary table comparing CRYSTAL and FLEUR results
     

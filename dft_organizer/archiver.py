@@ -5,19 +5,21 @@ from datetime import datetime
 from pathlib import Path
 
 import click
-from dft_organizer.crystal_parser.summary import parse_content, get_crystal_table_string
+from dft_organizer.crystal_parser.summary import parse_crystal_output
 from dft_organizer.fleur_parser.summary import parse_fleur_output
 import pandas as pd 
-
-def detect_engine(filenames: list) -> str:
-    """Detect DFT engine based on presence of specific files"""
-    if 'OUTPUT' in filenames or 'INPUT' in filenames:
-        return 'crystal'
-    elif 'fleur.out' in filenames or 'inp.xml' in filenames:
-        return 'fleur'
-    else:
-        # by default assume crystal
-        return 'crystal'
+from dft_organizer.utils import detect_engine, get_table_string
+from dft_organizer.crystal_parser.error_crystal_parser import (
+                    make_report as make_report_crystal,
+                    print_report as print_report_crystal,
+                    save_report as save_report_crystal,
+                )
+from dft_organizer.fleur_parser.error_fleur_parser import (
+                    make_report as make_report_fleur,
+                    print_report as print_report_fleur,
+                    save_report as save_report_fleur,
+)
+from dft_organizer.aiida_utils import extract_uuid_from_path
 
 
 def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
@@ -50,25 +52,6 @@ def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
         return False
 
 
-def extract_uuid_from_path(output_path: Path, root_path: Path) -> str:
-    """Extract UUID from AiiDA path structure"""
-    try:
-        relative_path = output_path.relative_to(root_path)
-        parts = relative_path.parts
-        
-        if len(parts) >= 3:
-            first_part = parts[0]
-            second_part = parts[1]
-            third_part = parts[2]
-            
-            uuid = f"{first_part}{second_part}{third_part}"
-            return uuid
-        
-        return ""
-    except (ValueError, IndexError):
-        return ""
-
-
 def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
     """Find calculation directory by UUID in AiiDA structure"""
     root_path = Path(root_dir).resolve()
@@ -99,51 +82,48 @@ def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
     raise FileNotFoundError(f"Calculation with UUID {uuid} not found in {root_path}")
 
 
-def generate_report_for_uuid(root_dir: Path, uuid: str, engine: str = "crystal") -> dict:
+def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
     """Generate report for a specific calculation by UUID"""
     try:
         calc_dir = find_calculation_by_uuid(root_dir, uuid)
         print(f"Found calculation at: {calc_dir}")
         
-        # Get list of files in directory
         filenames = [f.name for f in calc_dir.iterdir() if f.is_file()]
         
-        # Check for errors using the appropriate engine
         error_dict = {}
+        
+        engine = detect_engine(filenames)
         if engine == "crystal":
-            from dft_organizer.crystal_parser.error_crystal_parser import (
-                make_report,
-                print_report,
-                save_report,
-            )
+            error_dict = make_report_crystal(str(calc_dir), filenames, {})
+            output_file = calc_dir / 'OUTPUT'
+            parse_output = parse_crystal_output
+            print_report = print_report_crystal
+            save_report = save_report_crystal
         elif engine == "fleur":
-            from dft_organizer.fleur_parser.error_fleur_parser import (
-                make_report,
-                print_report,
-                save_report,
-            )
+            error_dict = make_report_fleur(str(calc_dir), filenames, {})
+            output_file = calc_dir / 'out'
+            parse_output = parse_fleur_output
+            print_report = print_report_fleur
+            save_report = save_report_fleur
         else:
-            raise NotImplementedError(
-                f"Engine {engine} is not implemented for reporting errors."
-            )
+            print(f"Unknown engine detected for {calc_dir}")
+            return None
         
-        # Generate error report for this calculation
-        error_dict = make_report(str(calc_dir), filenames, {})
-        
-        # Parse OUTPUT if exists
-        output_file = calc_dir / 'OUTPUT'
         summary = None
         
+        # parse result file if exists
         if output_file.exists():
-            summary = parse_content(output_file)
+            summary = parse_output(output_file)
             summary['output_path'] = str(output_file)
             summary['uuid'] = uuid
+            summary['engine'] = engine
         else:
-            print(f"OUTPUT file not found in {calc_dir}")
+            print(f"Output file not found in {calc_dir}")
             summary = {
                 'output_path': str(calc_dir),
                 'uuid': uuid,
-                'error': 'OUTPUT file not found'
+                'engine': engine,
+                'error': 'Output file not found'
             }
         
         print("\n" + "="*60)
@@ -151,7 +131,7 @@ def generate_report_for_uuid(root_dir: Path, uuid: str, engine: str = "crystal")
         print("="*60)
         
         if 'error' not in summary:
-            print(get_crystal_table_string(summary))
+            print(get_table_string(summary))
         
         print("\n--- ERROR REPORT ---")
         print_report(error_dict)
@@ -160,15 +140,14 @@ def generate_report_for_uuid(root_dir: Path, uuid: str, engine: str = "crystal")
         root_path = Path(root_dir).resolve()
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # save summary
         if summary:
             summary_file = root_path.parent / f"summary_uuid_{uuid}_{timestamp}.csv"
             df = pd.DataFrame([summary])
             df.to_csv(summary_file, index=False)
             print(f"\nSummary saved to: {summary_file}")
         
-        # Save error report
-        error_report_file = root_path.parent / f"errors_uuid_{uuid}_{timestamp}.txt"
+        # save error report
+        error_report_file = root_path.parent / f"report_uuid_{uuid}_{timestamp}.txt"
         save_report(error_dict, str(error_report_file))
         print(f"Error report saved to: {error_report_file}")
         
@@ -185,10 +164,12 @@ def generate_report_for_uuid(root_dir: Path, uuid: str, engine: str = "crystal")
 
 
 def archive_and_remove(
-    root_dir: Path, engine: str = "crystal", make_report: bool = True, aiida: bool = False
+    root_dir: Path, make_report: bool = True, aiida: bool = False
 ) -> None:
     """Archive directories recursively and remove original files"""
-    error_dict = {}
+    error_dict_fleur = {}
+    error_dict_crystal = {}
+    
     summary_store = []
     root_path = Path(root_dir).resolve()
 
@@ -209,45 +190,41 @@ def archive_and_remove(
     for current_dir, dirnames, filenames in dirs_to_process:
         if make_report:
             engine = detect_engine(filenames)
-            if 'OUTPUT' in filenames:
+            
+            if engine == "crystal" and 'OUTPUT' in filenames:
                 output_path = current_dir / 'OUTPUT'
-                summary = parse_content(output_path)
+                summary = parse_crystal_output(output_path)
                 
                 summary['output_path'] = str(output_path)
+                summary['engine'] = 'crystal'
                 
                 if aiida:
                     uuid = extract_uuid_from_path(output_path, root_path)
                     summary['uuid'] = uuid
                     
                 summary_store.append(summary)
-                print(get_crystal_table_string(summary))
+                print('CRYSTAL OUTPUT FOUND:')
+                print(get_table_string(summary))
                 
-            elif 'out' in filenames:
+            elif engine == "fleur" and 'out' in filenames:
                 output_path = current_dir / 'out'
                 summary = parse_fleur_output(output_path)
                 
                 summary['output_path'] = str(output_path)
+                summary['engine'] = 'fleur'
                 
                 if aiida:
                     uuid = extract_uuid_from_path(output_path, root_path)
                     summary['uuid'] = uuid
                 
                 summary_store.append(summary)
-                print(get_crystal_table_string(summary))
+                print('FLEUR OUTPUT FOUND:')
+                print(get_table_string(summary))
 
             if engine == "crystal":
-                from dft_organizer.crystal_parser.error_crystal_parser import (
-                    make_report,
-                    print_report,
-                    save_report,
-                )
+                error_dict_crystal = make_report_crystal(str(current_dir), filenames, error_dict_crystal)
             elif engine == "fleur":
-                from dft_organizer.fleur_parser.error_fleur_parser import (
-                    make_report,
-                    print_report,
-                    save_report,
-                )
-            error_dict = make_report(str(current_dir), filenames, error_dict)
+                error_dict_fleur = make_report_fleur(str(current_dir), filenames, error_dict_fleur)
                 
         if not any(current_dir.iterdir()):
             print(f"Skipping empty directory: {current_dir}")
@@ -261,19 +238,28 @@ def archive_and_remove(
             shutil.rmtree(current_dir)
         else:
             print(f"Failed to archive: {current_dir}")
-
-    if make_report:
-        print_report(error_dict)
-        print("Error report is ready.")
-        save_report(
-            error_dict,
-            str(root_path.parent / f"report_{engine}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt"),
-        )
     
+    if make_report:
+        time_now = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+        if error_dict_fleur != {}:
+            print_report_fleur(error_dict_fleur)
+            print("Error report for FLEUR is ready.")
+            save_report_fleur(
+                error_dict_fleur,
+                str(root_path.parent / f"report_fleur_{time_now}.txt"),
+            )
+        if error_dict_crystal != {}:
+            print_report_crystal(error_dict_crystal)
+            print("Error report for CRYSTAL is ready.")
+            save_report_crystal(
+                error_dict_crystal,
+                str(root_path.parent / f"report_crystal_{time_now}.txt"),
+            )
+        
     if summary_store:
         df = pd.DataFrame(summary_store)
         df.to_csv(
-            root_path.parent / f"summary_{engine}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv",
+            root_path.parent / f"summary_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv",
             index=False
         )
 
@@ -304,16 +290,11 @@ def cli():
     type=click.Path(exists=True, file_okay=False),
     help="Path to the directory to be archived",
 )
-@click.option(
-    "--engine",
-    default="crystal",
-    help="DFT engine name. Default is 'crystal'.",
-)
 @click.option("--report/--no-report", default=True, help="Create error report")
 @click.option("--aiida/--no-aiida", default=False, help="AiiDA mode - extract UUID from path")
-def archive(path, engine, report, aiida):
+def archive(path, report, aiida):
     """Archive directory, create report and remove original files."""
-    archive_and_remove(Path(path), engine, make_report=report, aiida=aiida)
+    archive_and_remove(Path(path), make_report=report, aiida=aiida)
 
 
 @cli.command()
@@ -329,16 +310,13 @@ def archive(path, engine, report, aiida):
     type=str,
     help="UUID of the calculation (e.g., 0ea8a6be-7199-4c3e-9263-fae76e8d081e)",
 )
-@click.option(
-    "--engine",
-    default="crystal",
-    help="DFT engine name. Default is 'crystal'.",
-)
-def report(path, uuid, engine):
+def report(path, uuid):
     """Generate report for a specific calculation by UUID."""
     clean_uuid = uuid.replace('-', '')
-    generate_report_for_uuid(Path(path), clean_uuid, engine)
+    generate_report_for_uuid(Path(path), clean_uuid)
+
 
 if __name__ == "__main__":
     # cli()
-    archive_and_remove(Path("/root/projects/dft_organizer/output_fleur"), engine="crystal")
+    archive_and_remove(Path("/root/projects/dft_organizer/output_fleur_crystal"))
+

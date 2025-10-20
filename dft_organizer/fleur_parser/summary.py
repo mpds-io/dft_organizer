@@ -44,7 +44,7 @@ def parse_fleur_output(filename):
 def get_fleur_table_string(fleur_res):
     "Create a formatted table string from FLEUR results"
     lines = []
-    lines.append(f"{'Parameter':<20} {'FLEUR':<20}")
+    lines.append(f"{'Parameter':<20} {'Value':<20}")
     lines.append("-"*40)
 
     for key, label in [('total_energy', 'Total Energy (a.u.)'),
