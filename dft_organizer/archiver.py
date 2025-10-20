@@ -5,21 +5,24 @@ from datetime import datetime
 from pathlib import Path
 
 import click
-from dft_organizer.crystal_parser.summary import parse_crystal_output
-from dft_organizer.fleur_parser.summary import parse_fleur_output
-import pandas as pd 
-from dft_organizer.utils import detect_engine, get_table_string
-from dft_organizer.crystal_parser.error_crystal_parser import (
-                    make_report as make_report_crystal,
-                    print_report as print_report_crystal,
-                    save_report as save_report_crystal,
-                )
-from dft_organizer.fleur_parser.error_fleur_parser import (
-                    make_report as make_report_fleur,
-                    print_report as print_report_fleur,
-                    save_report as save_report_fleur,
-)
+import pandas as pd
+
 from dft_organizer.aiida_utils import extract_uuid_from_path
+from dft_organizer.crystal_parser.error_crystal_parser import \
+    make_report as make_report_crystal
+from dft_organizer.crystal_parser.error_crystal_parser import \
+    print_report as print_report_crystal
+from dft_organizer.crystal_parser.error_crystal_parser import \
+    save_report as save_report_crystal
+from dft_organizer.crystal_parser.summary import parse_crystal_output
+from dft_organizer.fleur_parser.error_fleur_parser import \
+    make_report as make_report_fleur
+from dft_organizer.fleur_parser.error_fleur_parser import \
+    print_report as print_report_fleur
+from dft_organizer.fleur_parser.error_fleur_parser import \
+    save_report as save_report_fleur
+from dft_organizer.fleur_parser.summary import parse_fleur_output
+from dft_organizer.utils import detect_engine, get_table_string
 
 
 def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:

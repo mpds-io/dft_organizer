@@ -1,5 +1,6 @@
 import re
 
+
 def parse_fleur_output(filename):
     """
     Parse FLEUR output file and return results dictionary

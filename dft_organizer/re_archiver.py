@@ -1,23 +1,26 @@
-import subprocess
-from pathlib import Path
-from datetime import datetime
 import os
+import subprocess
+from datetime import datetime
+from pathlib import Path
+
 import click
 import pandas as pd
 
+from dft_organizer.crystal_parser.error_crystal_parser import \
+    make_report as make_report_crystal
+from dft_organizer.crystal_parser.error_crystal_parser import \
+    print_report as print_report_crystal
+from dft_organizer.crystal_parser.error_crystal_parser import \
+    save_report as save_report_crystal
 from dft_organizer.crystal_parser.summary import parse_crystal_output
+from dft_organizer.fleur_parser.error_fleur_parser import \
+    make_report as make_report_fleur
+from dft_organizer.fleur_parser.error_fleur_parser import \
+    print_report as print_report_fleur
+from dft_organizer.fleur_parser.error_fleur_parser import \
+    save_report as save_report_fleur
 from dft_organizer.fleur_parser.summary import parse_fleur_output
 from dft_organizer.utils import detect_engine, get_table_string
-from dft_organizer.crystal_parser.error_crystal_parser import (
-    make_report as make_report_crystal,
-    print_report as print_report_crystal,
-    save_report as save_report_crystal,
-)
-from dft_organizer.fleur_parser.error_fleur_parser import (
-    make_report as make_report_fleur,
-    print_report as print_report_fleur,
-    save_report as save_report_fleur,
-)
 
 
 def extract_7z(archive_path, target_dir):

@@ -1,7 +1,8 @@
 
+import pandas as pd
+
 from dft_organizer.crystal_parser.summary import parse_crystal_output
 from dft_organizer.fleur_parser.summary import parse_fleur_output
-import pandas as pd
 
 
 def get_table_string(res: dict):

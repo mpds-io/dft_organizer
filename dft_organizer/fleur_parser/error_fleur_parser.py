@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+
 def make_report(root: Path, files: list[str], error_dict: dict = {}) -> dict:
     """
     Make report with error description for FLEUR calculations.

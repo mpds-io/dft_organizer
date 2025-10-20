@@ -1,5 +1,6 @@
-from pycrystal import CRYSTOUT, CRYSTOUT_Error
 from pathlib import Path
+
+from pycrystal import CRYSTOUT, CRYSTOUT_Error
 
 
 def parse_crystal_output(path: Path):
