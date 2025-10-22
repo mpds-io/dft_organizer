@@ -17,7 +17,7 @@ def make_report(root: Path, files: str, error_dict: dict = {}) -> dict:
 
             if fort_content not in error_dict:
                 error_dict[fort_content] = []
-            error_dict[fort_content].append(first_line)
+            error_dict[fort_content].append(root)
 
     return error_dict
 
@@ -30,7 +30,7 @@ def print_report(error_dict: dict) -> None:
     print("---------REPORT CRYSTAL ERROR---------")
     for error, structures in error_dict.items():
         print(f"Error: {error}")
-        print("Structure (chemical formula):")
+        print("Calculations from directories:")
         for structure in structures:
             print(f"  - {structure}")
         print("\n")
@@ -44,7 +44,7 @@ def save_report(error_dict: dict, report_path: Path) -> None:
         report_file.write("---------REPORT CRYSTAL ERROR---------\n")
         for error, structures in error_dict.items():
             report_file.write(f"Error: {error}\n")
-            report_file.write("Structure (chemical formula):\n")
+            report_file.write("Calculations from directories:\n")
             for structure in structures:
                 report_file.write(f"  - {structure}\n")
             report_file.write("\n")

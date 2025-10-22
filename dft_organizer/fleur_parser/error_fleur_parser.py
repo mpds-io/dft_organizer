@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+
 def make_report(root: Path, files: list[str], error_dict: dict = {}) -> dict:
     """
     Make report with error description for FLEUR calculations.
@@ -42,17 +43,17 @@ def make_report(root: Path, files: list[str], error_dict: dict = {}) -> dict:
         if inside_error_block and current_error:
             errors.append("\n".join(current_error))
 
-        structure_name = Path(root).name
+        # structure_name = Path(root).name
 
         if errors:
             for err in errors:
                 if err not in error_dict:
                     error_dict[err] = []
-                error_dict[err].append(structure_name)
+                error_dict[err].append(root)
         else:
             if "No errors found" not in error_dict:
                 error_dict["No errors found"] = []
-            error_dict["No errors found"].append(structure_name)
+            error_dict["No errors found"].append(root)
 
     return error_dict
 
