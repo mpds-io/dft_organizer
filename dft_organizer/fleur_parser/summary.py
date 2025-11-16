@@ -2,7 +2,7 @@ import re
 from masci_tools.io.parsers.fleur import outxml_parser
 
 
-def parse_fleur_out_xml(filename):
+def parse_fleur_out_xml(filename, large_symmary: bool = False) -> dict:
     """
     Parse FLEUR out.xml file using masci_tools and return results dictionary
     """
@@ -29,9 +29,10 @@ def parse_fleur_out_xml(filename):
     results['d_pop'] = float('nan')
     results['total_pop'] = float('nan')
     
-    results['fermi_energy'] = parsed_data.get('fermi_energy', float('nan'))
-    results['number_of_iterations'] = parsed_data.get('number_of_iterations', 0)
-    results['density_convergence'] = parsed_data.get('density_convergence', float('nan'))
+    if large_symmary:
+        results['fermi_energy'] = parsed_data.get('fermi_energy', float('nan'))
+        results['number_of_iterations'] = parsed_data.get('number_of_iterations', 0)
+        results['density_convergence'] = parsed_data.get('density_convergence', float('nan'))
     
     return results
 
