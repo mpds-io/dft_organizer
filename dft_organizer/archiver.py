@@ -209,8 +209,11 @@ def archive_and_remove(
                 print('CRYSTAL OUTPUT FOUND:')
                 print(get_table_string(summary))
                 
-            elif engine == "fleur" and 'out' in filenames:
-                output_path = current_dir / 'out'
+            elif engine == "fleur" and ('out' in filenames or 'out.xml' in filenames):
+                if 'out.xml' in filenames:
+                    output_path = current_dir / 'out.xml'
+                else:   
+                    output_path = current_dir / 'out'
                 summary = parse_fleur_output(output_path)
                 
                 summary['output_path'] = str(output_path)
@@ -320,6 +323,6 @@ def report(path, uuid):
 
 
 if __name__ == "__main__":
-    cli()
-    # archive_and_remove(Path("/root/projects/dft_organizer/output_fleur_crystal"))
+    # cli()
+    archive_and_remove(Path("/root/projects/dft_organizer/f"), make_report=True, aiida=True)
 

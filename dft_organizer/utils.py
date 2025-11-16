@@ -12,7 +12,7 @@ def get_table_string(res: dict):
     lines.append("-"*40)
 
     for key, label in [('total_energy', 'Total Energy (a.u.)'),
-                       ('cpu_time', 'Calculation Time (m)'),
+                       ('cpu_time', 'Calculation Time (h)'),
                        ('s_pop', 's-population'),
                        ('p_pop', 'p-population'),
                        ('d_pop', 'd-population'),
