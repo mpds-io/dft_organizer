@@ -1,10 +1,49 @@
 import re
+from masci_tools.io.parsers.fleur import outxml_parser
+
+
+def parse_fleur_out_xml(filename, large_symmary: bool = False) -> dict:
+    """
+    Parse FLEUR out.xml file using masci_tools and return results dictionary
+    """
+    try:
+        parsed_data = outxml_parser(filename)
+    except Exception as e:
+        print(f"Error parsing file {filename}: {e}")
+        return {}
+    
+    results = {}
+    
+    # total energy (eV)
+    results['total_energy'] = parsed_data.get('energy', float('nan'))
+    
+    # CPU time: walltime in sec -> in hours
+    walltime_sec = parsed_data.get('walltime', float('nan'))
+    results['cpu_time'] = walltime_sec / 3600 if walltime_sec else float('nan')
+    
+    results['bandgap'] = parsed_data.get('bandgap', float('nan'))
+    
+    # no information about charges in out.xml, set to nan
+    results['s_pop'] = float('nan')
+    results['p_pop'] = float('nan')
+    results['d_pop'] = float('nan')
+    results['total_pop'] = float('nan')
+    
+    if large_symmary:
+        results['fermi_energy'] = parsed_data.get('fermi_energy', float('nan'))
+        results['number_of_iterations'] = parsed_data.get('number_of_iterations', 0)
+        results['density_convergence'] = parsed_data.get('density_convergence', float('nan'))
+    
+    return results
+
 
 
 def parse_fleur_output(filename):
     """
     Parse FLEUR output file and return results dictionary
     """
+    if filename.suffix == '.xml':
+        return parse_fleur_out_xml(filename)
     try:
         with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
@@ -49,7 +88,7 @@ def get_fleur_table_string(fleur_res):
     lines.append("-"*40)
 
     for key, label in [('total_energy', 'Total Energy (a.u.)'),
-                       ('cpu_time', 'Calculation Time (m)'),
+                       ('cpu_time', 'Calculation Time (h)'),
                        ('s_pop', 's-population'),
                        ('p_pop', 'p-population'),
                        ('d_pop', 'd-population'),

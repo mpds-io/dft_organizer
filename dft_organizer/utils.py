@@ -3,7 +3,7 @@ import pandas as pd
 
 from dft_organizer.crystal_parser.summary import parse_crystal_output
 from dft_organizer.fleur_parser.summary import parse_fleur_output
-
+from dft_organizer.fmt import detect_calculation_code
 
 def get_table_string(res: dict):
     """Builds a table string from results"""
@@ -12,7 +12,7 @@ def get_table_string(res: dict):
     lines.append("-"*40)
 
     for key, label in [('total_energy', 'Total Energy (a.u.)'),
-                       ('cpu_time', 'Calculation Time (m)'),
+                       ('cpu_time', 'Calculation Time (h)'),
                        ('s_pop', 's-population'),
                        ('p_pop', 'p-population'),
                        ('d_pop', 'd-population'),
@@ -23,16 +23,18 @@ def get_table_string(res: dict):
 
     return "\n".join(lines)
 
-def detect_engine(filenames: list) -> str:
+def detect_engine(filenames: list, current_dir) -> dict:
     """Detect DFT engine based on presence of specific files"""
-    if 'OUTPUT' in filenames or 'INPUT' in filenames:
+    fmt_map = {}
+    for file in filenames:
+        fmt, _ = detect_calculation_code(current_dir / file)
+        fmt_map[file] = fmt
+    if 'OUTPUT' in fmt_map and 'crystal' in fmt_map.values():
         return 'crystal'
-    elif 'fleur.out' in filenames or 'inp.xml' in filenames or 'out' in filenames:
+    elif 'out' in fmt_map or 'out.xml' in fmt_map and 'fleur' in fmt_map.values():
         return 'fleur'
     else:
-        # by default assume crystal
-        return 'crystal'
-    
+        return 'unknown'
     
 def create_summary_table(path_dict: dict):
     """Create summary table comparing CRYSTAL and FLEUR results

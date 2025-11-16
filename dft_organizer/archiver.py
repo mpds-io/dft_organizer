@@ -95,7 +95,8 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
         
         error_dict = {}
         
-        engine = detect_engine(filenames)
+        engine = detect_engine(filenames, calc_dir)
+        
         if engine == "crystal":
             error_dict = make_report_crystal(str(calc_dir), filenames, {})
             output_file = calc_dir / 'OUTPUT'
@@ -192,7 +193,7 @@ def archive_and_remove(
 
     for current_dir, dirnames, filenames in dirs_to_process:
         if make_report:
-            engine = detect_engine(filenames)
+            engine = detect_engine(filenames, current_dir)
             
             if engine == "crystal" and 'OUTPUT' in filenames:
                 output_path = current_dir / 'OUTPUT'
@@ -209,8 +210,11 @@ def archive_and_remove(
                 print('CRYSTAL OUTPUT FOUND:')
                 print(get_table_string(summary))
                 
-            elif engine == "fleur" and 'out' in filenames:
-                output_path = current_dir / 'out'
+            elif engine == "fleur" and ('out' in filenames or 'out.xml' in filenames):
+                if 'out.xml' in filenames:
+                    output_path = current_dir / 'out.xml'
+                else:   
+                    output_path = current_dir / 'out'
                 summary = parse_fleur_output(output_path)
                 
                 summary['output_path'] = str(output_path)
@@ -321,5 +325,5 @@ def report(path, uuid):
 
 if __name__ == "__main__":
     cli()
-    # archive_and_remove(Path("/root/projects/dft_organizer/output_fleur_crystal"))
+    # archive_and_remove(Path("/root/projects/dft_organizer/f"), make_report=True, aiida=True)
 
