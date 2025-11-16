@@ -81,7 +81,7 @@ def generate_reports_after_extraction(root_dir: Path, aiida: bool = False):
         current_dir = Path(dirpath)
         
         # detect engine for current directory
-        engine = detect_engine(filenames)
+        engine = detect_engine(filenames, current_dir)
         
         # check for errors based on detected engine
         if engine == "crystal":
@@ -258,4 +258,4 @@ def cli(path, report, aiida):
 
 if __name__ == "__main__":
     cli()
-    # restore_archives_iterative(Path('/root/projects/dft_organizer/output_fleur_crystal.7z'), generate_reports=True, aiida=False)
+    # restore_archives_iterative(Path('/root/projects/dft_organizer/f.7z'), generate_reports=True, aiida=False)
