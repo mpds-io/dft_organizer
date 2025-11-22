@@ -117,6 +117,7 @@ def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
 
     raise FileNotFoundError(f"Calculation with UUID {uuid} not found in {root_path}")
 
+
 def save_reports(
     root_path: Path,
     summary_store: list[dict],
@@ -254,15 +255,8 @@ def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
         verbose=True,
     )
 
-    save_reports(
-        root_path,
-        summary_store,
-        err_cr,
-        err_fl
-    )
+    save_reports(root_path, summary_store, err_cr, err_fl)
 
     print("\n" + "=" * 60)
     print("REPORTS GENERATION COMPLETE")
     print("=" * 60 + "\n")
-    
-

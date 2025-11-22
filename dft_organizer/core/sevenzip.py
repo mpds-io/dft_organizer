@@ -26,7 +26,8 @@ def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
         print(f"Error archiving {source_dir}: {e}")
         print(f"Output: {e.stderr if hasattr(e, 'stderr') else ''}")
         return False
-    
+
+
 def extract_7z(archive_path: Path, target_dir: Path) -> bool:
     """Unpack 7z archive to target dir"""
     try:

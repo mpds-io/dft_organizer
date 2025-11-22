@@ -48,5 +48,5 @@ def report(path, uuid):
 
 
 if __name__ == "__main__":
-    # cli()
-    archive_and_remove(Path("/root/projects/dft_organizer/f"), make_report=True, aiida=True)
+    cli()
+

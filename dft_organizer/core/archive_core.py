@@ -66,7 +66,6 @@ def archive_and_remove(
     return pd.DataFrame(summary_store) if summary_store else None
 
 
-
 def restore_archives_iterative(
     start_path: Path, generate_reports: bool = True, aiida: bool = False
 ):

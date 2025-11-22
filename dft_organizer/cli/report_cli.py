@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 import click
@@ -18,12 +17,8 @@ from dft_organizer.core.reporting import generate_reports_only
     default=False,
     help="AiiDA mode – extract UUID from path structure",
 )
-@click.option(
-    "--suffix",
-    default="",
-    help="Optional suffix for report filenames (e.g. '_extracted')",
-)
-def cli(path: str, aiida: bool, suffix: str) -> None:
+
+def cli(path: str, aiida: bool) -> None:
     """
     Generate summary CSV and error reports without archiving.
     """

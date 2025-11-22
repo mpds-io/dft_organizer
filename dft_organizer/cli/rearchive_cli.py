@@ -28,5 +28,4 @@ def cli(path, report, aiida):
 
 
 if __name__ == "__main__":
-    # cli()
-    restore_archives_iterative(Path('/root/projects/dft_organizer/f.7z'), generate_reports=True, aiida=False)
+    cli()
