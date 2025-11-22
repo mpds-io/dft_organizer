@@ -6,13 +6,14 @@ authors = [{ name = "Alina Zhidkovskaya", email = "alina@mpds.io" }]
 dependencies = [
     "click>=8.1",
     "pycrystal",
-    "ase-fleur @ git+https://github.com/blokhin/ase-fleur", # 0.0.2a patch
+    "ase-fleur @ git+https://github.com/blokhin/ase-fleur",
 ]
 requires-python = ">=3.9"
 
 [project.scripts]
-dft-pack = "dft_organizer.archiver:cli"
-dft-unpack = "dft_organizer.re_archiver:cli"
+dft-pack   = "dft_organizer.cli.archive_cli:cli"
+dft-unpack = "dft_organizer.cli.rearchive_cli:cli"
+dft-report = "dft_organizer.cli.report_cli:cli"
 
 [build-system]
 requires = ["setuptools>=61.0"]

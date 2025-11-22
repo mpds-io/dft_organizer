@@ -230,14 +230,22 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
         return None
 
 
-def generate_reports_after_extraction(root_dir: Path, aiida: bool = False) -> None:
+def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
+    """
+    Scan a calculation tree, print a short summary to stdout
+    and save a summary CSV plus error reports.
+
+    Intended to be used after extraction, but can be called
+    on any directory with calculations. Does not perform any
+    archiving or directory removal.
+    """
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
         print(f"Directory does not exist: {root_path}")
         return
 
     print("\n" + "=" * 60)
-    print("GENERATING REPORTS AFTER EXTRACTION")
+    print("GENERATING REPORTS FOR ALL CALCULATIONS")
     print("=" * 60 + "\n")
 
     summary_store, err_cr, err_fl = scan_calculations(
@@ -256,3 +264,5 @@ def generate_reports_after_extraction(root_dir: Path, aiida: bool = False) -> No
     print("\n" + "=" * 60)
     print("REPORTS GENERATION COMPLETE")
     print("=" * 60 + "\n")
+    
+
