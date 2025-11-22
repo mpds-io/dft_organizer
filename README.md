@@ -1,6 +1,6 @@
 # DFT organizer
 
-[Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030) and [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947)
+[Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030) and [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947)  
 Tilde Materials Informatics and Materials Platform for Data Science LLC
 
 
@@ -34,41 +34,51 @@ Install via pip:
 
 ### Archive a directory and generate report
 
-```
+dft-pack --path <directory_path> [--report|--no-report] [--aiida|--no-aiida]
 
-dft-pack --path <directory_path> [--engine <crystal|fleur>] [--report|--no-report] [--aiida|--no-aiida]
-
-```
-
-- `--path`         Path to the calculation directory
-- `--engine`       DFT engine (default: crystal)
-- `--report`       Generate error report and summary (default)
-- `--no-report`    Skip report generation
-- `--aiida`        Extract UUID from AiiDA directory structure
-- `--no-aiida`     Do not extract UUID
+- `--path`         Path to the calculation directory  
+- `--report`       Generate error report and summary (default)  
+- `--no-report`    Skip report generation  
+- `--aiida`        Extract UUID from AiiDA directory structure  
+- `--no-aiida`     Do not extract UUID  
 
 Creates:
 
 - `<directory_name>.7z`
-- `report_<engine>_<timestamp>.txt`
-- `summary_<engine>_<timestamp>.csv`
+- `report_crystal_<timestamp>.txt` and/or `report_fleur_<timestamp>.txt`
+- `summary_<timestamp>.csv`
+
 
 ### Unpack an archive and generate reports
 
-```
-dft-unpack --path <archive_or_directory_path> [--engine <crystal|fleur>] [--report|--no-report] [--aiida|--no-aiida]
-```
+dft-unpack --path <archive_or_directory_path> [--report|--no-report] [--aiida|--no-aiida]
 
-- `--path`         Path to a .7z archive or directory with archives
-- `--engine`       DFT engine (default: crystal)
-- `--report`       Generate summary and error reports after extraction (default)
-- `--no-report`    Skip report generation
-- `--aiida`        Extract UUID from AiiDA directory structure
-- `--no-aiida`     Do not extract UUID
+- `--path`         Path to a .7z archive or directory with archives  
+- `--report`       Generate summary and error reports after extraction (default)  
+- `--no-report`    Skip report generation  
+- `--aiida`        Extract UUID from AiiDA directory structure  
+- `--no-aiida`     Do not extract UUID  
 
 Creates under parent directory:
-- `summary_<engine>_extracted_<timestamp>.csv`
-- `report_<engine>_extracted_<timestamp>.txt`
+- `summary_<timestamp>.csv`
+- `report_crystal_<timestamp>.txt`
+- `report_fleur_<timestamp>.txt`
+
+
+### Generate reports without archiving
+
+dft-report --path <directory_path> [--aiida|--no-aiida]
+
+- `--path`         Root directory containing calculations  
+- `--aiida`        Extract UUID from AiiDA directory structure  
+- `--no-aiida`     Do not extract UUID  
+
+Creates under parent directory:
+- `summary_<timestamp>.csv`
+- `report_crystal_<timestamp>.txt`
+- `report_fleur_<timestamp>.txt`
+
+
 
 
 ## Python API
@@ -127,9 +137,3 @@ Output files:
 - `total_pop`       Total population
 - `output_path`     Full path to OUTPUT file
 - `uuid`            Calculation UUID (AiiDA mode only)
-
-
-## Authors
-
-- [Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030)
-- [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947)
