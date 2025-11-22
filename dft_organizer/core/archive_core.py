@@ -6,9 +6,9 @@ from pathlib import Path
 import os
 import shutil
 
-from dft_organizer.core.reporting import scan_calculations, save_reports
-from dft_organizer.core.sevenzip import compress_with_7z, extract_7z
-from dft_organizer.core.reporting import generate_reports_only
+from dft_organizer.core import scan_calculations, save_reports
+from dft_organizer.core import compress_with_7z, extract_7z
+from dft_organizer.core import generate_reports_only
 
 
 def archive_and_remove(

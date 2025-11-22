@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 
-from dft_organizer.core.reporting import generate_reports_only
+from dft_organizer.core import generate_reports_only
 
 
 @click.command()

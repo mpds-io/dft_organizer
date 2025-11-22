@@ -2,8 +2,8 @@ from pathlib import Path
 
 import click
 
-from dft_organizer.core.archive_core import archive_and_remove
-from dft_organizer.core.reporting import generate_report_for_uuid
+from dft_organizer.core import archive_and_remove
+from dft_organizer.core import generate_report_for_uuid
 
 
 @click.group()
