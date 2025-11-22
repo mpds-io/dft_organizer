@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Union
 
 
-def detect_calculation_code(filepath: Union[str, Path]) -> tuple:
+def detect_calculation_code(filepath: Union[str, Path]) -> tuple[str, str]:
     """
     Define the DFT code used for the calculation based on file content.
     """
@@ -81,9 +81,9 @@ def detect_calculation_code(filepath: Union[str, Path]) -> tuple:
 
 if __name__ == "__main__":
     # path = Path("/root/projects/ab_initio_calculations/fleur_input_copy_2/sym.xml")
+    # path = Path("/root/projects/ab_initio_calculations/output_crystal/20250628_115541_8/fort.34")
     path = Path(
         "/root/projects/ab_initio_calculations/output_fleur/20250623_171647_827/out"
     )
-    # path = Path("/root/projects/ab_initio_calculations/output_crystal/20250628_115541_8/fort.34")
     code, reason = detect_calculation_code(path)
     print(f"Detected code: {code} ({reason})")
