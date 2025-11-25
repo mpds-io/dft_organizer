@@ -10,19 +10,23 @@ def parse_crystal_output(path: Path):
     except CRYSTOUT_Error as e:
         print(f"CRYSTAL OUTPUT file: {path} is not readable!")
         return {
-            'bandgap': None,
-            'cpu_time': None,
-            'total_energy': None,
-            's_pop': None,
-            'p_pop': None,
-            'd_pop': None,
-            'total_pop': None
+            "bandgap": None,
+            "cpu_time": None,
+            "total_energy": None,
+            "s_pop": None,
+            "p_pop": None,
+            "d_pop": None,
+            "total_pop": None,
         }
 
     # electrons -> basis_set -> bs
     mulliken_dict = {}
-    if 'electrons' in content and 'basis_set' in content['electrons'] and 'bs' in content['electrons']['basis_set']:
-        mulliken_dict = content['electrons']['basis_set']['bs']
+    if (
+        "electrons" in content
+        and "basis_set" in content["electrons"]
+        and "bs" in content["electrons"]["basis_set"]
+    ):
+        mulliken_dict = content["electrons"]["basis_set"]["bs"]
 
     def sum_orbital(orb_type):
         total = 0.0
@@ -35,33 +39,40 @@ def parse_crystal_output(path: Path):
                         total += pair[1]
         return total
 
-    s_pop = sum_orbital('S')
-    p_pop = sum_orbital('P')
-    d_pop = sum_orbital('D')
+    s_pop = sum_orbital("S")
+    p_pop = sum_orbital("P")
+    d_pop = sum_orbital("D")
     total_pop = s_pop + p_pop + d_pop
 
     # bandgap
     bandgap = None
-    if 'conduction' in content and isinstance(content['conduction'], list) and len(content['conduction']) > 0:
-        bandgap = content['conduction'][-1].get('band_gap', None)
+    if (
+        "conduction" in content
+        and isinstance(content["conduction"], list)
+        and len(content["conduction"]) > 0
+    ):
+        bandgap = content["conduction"][-1].get("band_gap", None)
 
-    # duration, energy 
+    # duration, energy
     try:
-        cpu_time = float(content['duration'])
+        cpu_time = float(content["duration"])
     except:
         cpu_time = None
-    total_energy = content.get('energy', None)
+    total_energy = content.get("energy", None)
 
     return {
-        'bandgap': bandgap,
-        'cpu_time': cpu_time,
-        'total_energy': total_energy,
-        's_pop': s_pop,
-        'p_pop': p_pop,
-        'd_pop': d_pop,
-        'total_pop': total_pop
+        "bandgap": bandgap,
+        "cpu_time": cpu_time,
+        "total_energy": total_energy,
+        "s_pop": s_pop,
+        "p_pop": p_pop,
+        "d_pop": d_pop,
+        "total_pop": total_pop,
     }
 
+
 if __name__ == "__main__":
-    res = parse_crystal_output("/root/projects/dft_organizer/playground_data/20250701_124402_81/OUTPUT")
+    res = parse_crystal_output(
+        "/root/projects/dft_organizer/playground_data/20250701_124402_81/OUTPUT"
+    )
     print(res)

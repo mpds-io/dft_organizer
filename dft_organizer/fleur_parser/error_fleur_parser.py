@@ -25,7 +25,9 @@ def make_report(root: Path, files: list[str], error_dict: dict = {}) -> dict:
                 continue
 
             # end juDFT-Error block
-            if inside_error_block and stripped.startswith("*****************************************"):
+            if inside_error_block and stripped.startswith(
+                "*****************************************"
+            ):
                 current_error.append(stripped)
                 errors.append("\n".join(current_error))
                 inside_error_block = False
@@ -86,6 +88,3 @@ def save_report(error_dict: dict, report_path: Path) -> None:
             for structure in structures:
                 report_file.write(f" - {structure}\n")
             report_file.write("\n")
-
-
-    
