@@ -1,5 +1,10 @@
 import subprocess
+from distutils import spawn
 from pathlib import Path
+
+
+if spawn.find_executable("7z") is None:
+    raise OSError("7z archiver is not found in the system")
 
 
 def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
