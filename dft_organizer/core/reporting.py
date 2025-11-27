@@ -1,31 +1,23 @@
 import os
 from datetime import datetime
-
-from dft_organizer.aiida_utils import extract_uuid_from_path
-from dft_organizer.crystal_parser import make_report as make_report_crystal
-from dft_organizer.crystal_parser import print_report as print_report_crystal
-from dft_organizer.crystal_parser import save_report as save_report_crystal
-from dft_organizer.crystal_parser import parse_crystal_output
-from dft_organizer.fleur_parser import make_report as make_report_fleur
-from dft_organizer.fleur_parser import print_report as print_report_fleur
-from dft_organizer.fleur_parser import save_report as save_report_fleur
-from dft_organizer.fleur_parser import parse_fleur_output
-from dft_organizer.utils import detect_engine, get_table_string
-
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import polars as pl  
 
 from dft_organizer.aiida_utils import extract_uuid_from_path
 from dft_organizer.utils import detect_engine, get_table_string
 from dft_organizer.crystal_parser import (
     parse_crystal_output,
     make_report as make_report_crystal,
+    print_report as print_report_crystal,
+    save_report as save_report_crystal,
 )
 from dft_organizer.fleur_parser import (
     parse_fleur_output,
     make_report as make_report_fleur,
+    print_report as print_report_fleur,
+    save_report as save_report_fleur,
 )
 
 
@@ -127,10 +119,9 @@ def save_reports(
     time_now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
     if summary_store:
-        df = pd.DataFrame(summary_store)
-        df.to_csv(
+        df = pl.DataFrame(summary_store)
+        df.write_csv(
             root_path.parent / f"summary_{time_now}.csv",
-            index=False,
         )
 
     if error_dict_fleur:
@@ -146,6 +137,7 @@ def save_reports(
             error_dict_crystal,
             root_path.parent / f"report_crystal_{time_now}.txt",
         )
+
 
 
 def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
@@ -209,8 +201,8 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
 
         if summary:
             summary_file = root_path.parent / f"summary_uuid_{uuid}_{timestamp}.csv"
-            df = pd.DataFrame([summary])
-            df.to_csv(summary_file, index=False)
+            df = pl.DataFrame([summary])
+            df.write_csv(summary_file)
             print(f"\nSummary saved to: {summary_file}")
 
         # save error report

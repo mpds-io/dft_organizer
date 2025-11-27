@@ -1,5 +1,4 @@
-import pandas as pd
-
+import polars as pl 
 from dft_organizer.crystal_parser import parse_crystal_output
 from dft_organizer.fleur_parser import parse_fleur_output
 from dft_organizer.fmt import detect_calculation_code
@@ -40,24 +39,22 @@ def detect_engine(filenames: list, current_dir) -> dict:
         return "unknown"
 
 
-def create_summary_table(path_dict: dict):
+def create_summary_table(path_dict: dict) -> pl.DataFrame:
     """Create summary table comparing CRYSTAL and FLEUR results
 
     Args:
-        path_dict (dict): Dictionary with formula as keys and paths to output files as values.
-                          Example: {'H': {'crystal': 'path/to/OUTPUT', 'fleur': 'path/to/out'}, ...}
+        path_dict (dict): {'H': {'crystal': 'path/to/OUTPUT', 'fleur': 'path/to/out'}, ...}
     Returns:
-        pd.DataFrame: DataFrame summarizing CPU time and bandgap from both codes."""
-
+        pl.DataFrame: Summary of CPU time and bandgap from both codes.
+    """
     summary_data = []
+
     for formula, paths in path_dict.items():
         row_data = {"Element": formula}
         crystal_file = paths.get("crystal")
         fleur_file = paths.get("fleur")
 
         if crystal_file:
-            if formula == "P":
-                print()
             crystal_res = parse_crystal_output(crystal_file)
             row_data.update(
                 {
@@ -80,4 +77,6 @@ def create_summary_table(path_dict: dict):
             row_data.update({"FLEUR_Time": "N/A", "FLEUR_Bandgap": "N/A"})
 
         summary_data.append(row_data)
-    return pd.DataFrame(summary_data)
+
+    return pl.DataFrame(summary_data)
+
