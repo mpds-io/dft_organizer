@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import json
 import polars as pl  
 
 from dft_organizer.aiida_utils import extract_uuid_from_path
@@ -117,12 +118,26 @@ def save_reports(
     error_dict_fleur: dict,
 ) -> None:
     time_now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    
+    def _serialize_nested(v):
+        if v is None:
+            return ""
+        # cell / positions / pbc / numbers / symbols
+        return json.dumps(v)
 
     if summary_store:
-        df = pl.DataFrame(summary_store)
-        df.write_csv(
-            root_path.parent / f"summary_{time_now}.csv",
-        )
+        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols"]
+        flat_summary = []
+        for row in summary_store:
+            row = dict(row) 
+            for k in nested_keys:
+                if k in row:
+                    row[k] = _serialize_nested(row[k])
+            flat_summary.append(row)
+
+        df = pl.DataFrame(flat_summary)
+        df.write_csv(root_path.parent / f"summary_{time_now}.csv")
+
 
     if error_dict_fleur:
         print_report_fleur(error_dict_fleur)

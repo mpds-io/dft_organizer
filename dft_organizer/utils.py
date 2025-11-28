@@ -4,26 +4,33 @@ from dft_organizer.fleur_parser import parse_fleur_output
 from dft_organizer.fmt import detect_calculation_code
 
 
-def get_table_string(res: dict):
-    """Builds a table string from results"""
-    lines = []
-    lines.append(f"{'Parameter':<20} {'Value':<20}")
-    lines.append("-" * 40)
+def get_table_string(res: dict) -> str:
+    """Build a table string from generic FLEUR/CRYSTAL results."""
 
-    for key, label in [
-        ("total_energy", "Total Energy (a.u.)"),
-        ("cpu_time", "Calculation Time (h)"),
-        ("s_pop", "s-population"),
-        ("p_pop", "p-population"),
-        ("d_pop", "d-population"),
-        ("total_pop", "Total population"),
-        ("bandgap", "Band Gap (eV)"),
-    ]:
-        val = res.get(key, "N/A")
-        lines.append(f"{label:<20} {val if val is not None else 'N/A':<20}")
+    def fmt(val, prec=6):
+        if isinstance(val, (int, float)):
+            if val != val:  # NaN
+                return "N/A"
+            return f"{val:.{prec}g}"
+        if val is None:
+            return "N/A"
+        return str(val)
+
+    lines = []
+    lines.append(f"{'Parameter':<25} {'Value':<20}")
+    lines.append("-" * 50)
+
+    rows = [
+        ("Total Energy (eV)",     fmt(res.get("total_energy"))),
+        ("Total Energy (Ha)",     fmt(res.get("energy_hartree"))),
+        ("Duration (h)",          fmt(res.get("duration"), prec=4)),
+        ("Band Gap (eV)",         fmt(res.get("bandgap"))),
+    ]
+
+    for label, val in rows:
+        lines.append(f"{label:<25} {val:<20}")
 
     return "\n".join(lines)
-
 
 def detect_engine(filenames: list, current_dir) -> dict:
     """Detect DFT engine based on presence of specific files"""

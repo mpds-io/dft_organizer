@@ -1,9 +1,10 @@
 import re
 from masci_tools.io.parsers.fleur import outxml_parser
 from pathlib import Path
+from ase.io import read
 
 
-def parse_fleur_out_xml(filename: Path, large_symmary: bool = False) -> dict:
+def parse_fleur_out_xml(filename: Path) -> dict:
     """
     Parse FLEUR out.xml file using masci_tools and return results dictionary
     """
@@ -20,23 +21,19 @@ def parse_fleur_out_xml(filename: Path, large_symmary: bool = False) -> dict:
 
     # CPU time: walltime in sec -> in hours
     walltime_sec = parsed_data.get("walltime", float("nan"))
-    results["cpu_time"] = walltime_sec / 3600 if walltime_sec else float("nan")
+    results["duration"] = walltime_sec / 3600 if walltime_sec else float("nan")
 
     results["bandgap"] = parsed_data.get("bandgap", float("nan"))
 
-    # no information about charges in out.xml, set to nan
-    results["s_pop"] = float("nan")
-    results["p_pop"] = float("nan")
-    results["d_pop"] = float("nan")
-    results["total_pop"] = float("nan")
-
-    if large_symmary:
-        results["fermi_energy"] = parsed_data.get("fermi_energy", float("nan"))
-        results["number_of_iterations"] = parsed_data.get("number_of_iterations", 0)
-        results["density_convergence"] = parsed_data.get(
-            "density_convergence", float("nan")
-        )
-
+    results["energy_hartree"] = parsed_data.get('energy_hartree', float("nan"))
+    
+    # structure data
+    ase_obj = read(filename, format="fleur-outxml")
+    results["cell"]     = ase_obj.get_cell().tolist()
+    results["positions"] = ase_obj.get_positions().tolist()
+    results["pbc"]      = ase_obj.get_pbc().tolist()
+    results["numbers"]  = ase_obj.get_atomic_numbers().tolist()
+    results["symbols"]  = ase_obj.get_chemical_symbols()
     return results
 
 
@@ -61,7 +58,7 @@ def parse_fleur_output(filename: Path):
 
     time_match = re.search(r"Total execution time:\s*(\d+)sec", content)
     if time_match:
-        results["cpu_time"] = float(time_match.group(1)) / 3600
+        results["duration"] = float(time_match.group(1)) / 3600
 
     bandgap_match = re.search(
         r"bandgap\s*:\s*([\d\.E+-]+)\s*htr", content, re.IGNORECASE
@@ -83,32 +80,42 @@ def parse_fleur_output(filename: Path):
         content,
         re.DOTALL,
     )
-    if charges_match:
-        populations = [float(x) for x in charges_match.groups()]
-        results["s_pop"] = populations[0]
-        results["p_pop"] = populations[1]
-        results["d_pop"] = populations[2]
-        results["total_pop"] = populations[4]
-
+    
+    results["energy_hartree"] = results["total_energy"] / 27.21
+    
+    # TODO: fix it
+    # no information for structure in .out files
+    results["cell"] = float("nan")
+    results["positions"] = float("nan")
+    results["pbc"] = float("nan")
+    results["numbers"] = float("nan")
+    results["symbols"] = float("nan")
     return results
+    
 
+def get_fleur_table_string(fleur_res: dict) -> str:
+    """
+    Create a formatted table string from FLEUR results
+    """
+    def fmt(val, prec=6):
+        if isinstance(val, (int, float)):
+            if val != val:  
+                return "N/A"
+            return f"{val:.{prec}g}"
+        return str(val)
 
-def get_fleur_table_string(fleur_res: dict):
-    "Create a formatted table string from FLEUR results"
     lines = []
-    lines.append(f"{'Parameter':<20} {'Value':<20}")
-    lines.append("-" * 40)
+    lines.append(f"{'Parameter':<25} {'Value':<20}")
+    lines.append("-" * 50)
 
-    for key, label in [
-        ("total_energy", "Total Energy (a.u.)"),
-        ("cpu_time", "Calculation Time (h)"),
-        ("s_pop", "s-population"),
-        ("p_pop", "p-population"),
-        ("d_pop", "d-population"),
-        ("total_pop", "Total population"),
-        ("bandgap", "Band Gap (eV)"),
-    ]:
-        val = fleur_res.get(key, "N/A")
-        lines.append(f"{label:<20} {val:<20}")
+    rows = [
+        ("Total Energy (eV)",      fmt(fleur_res.get("total_energy"))),
+        ("Total Energy (Ha)",      fmt(fleur_res.get("energy_hartree"))),
+        ("Duration (h)",           fmt(fleur_res.get("duration"), prec=4)),
+        ("Band Gap (eV)",          fmt(fleur_res.get("bandgap"))),
+    ]
+
+    for label, val in rows:
+        lines.append(f"{label:<25} {val:<20}")
 
     return "\n".join(lines)
