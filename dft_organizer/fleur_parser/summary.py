@@ -3,6 +3,32 @@ from masci_tools.io.parsers.fleur import outxml_parser
 from pathlib import Path
 from ase.io import read
 
+import numpy as np
+
+def structure_displacement(initial_file: Path, final_file: Path) -> dict:
+    """
+    Compute integral displacement between initial and optimized structures.
+    Returns sum of squared displacements and RMSD.
+    """
+    atoms_init = read(initial_file, format="fleur-xml")               # read(initial_file, format="fleur-inpxml")
+    atoms_final = read(final_file, format="fleur-outxml")
+
+    pos_init = atoms_init.get_positions()
+    pos_final = atoms_final.get_positions()
+
+    if pos_init.shape != pos_final.shape:
+        raise ValueError("Initial and final structures have different sizes/order")
+
+    disp = pos_final - pos_init          
+    sq = np.sum(disp**2, axis=1)        
+    sum_sq = float(np.sum(sq))         
+    rmsd = float(np.sqrt(np.mean(sq)))  
+
+    return {
+        "sum_sq_disp": sum_sq,
+        "rmsd_disp": rmsd,
+    }
+
 
 def parse_fleur_out_xml(filename: Path) -> dict:
     """
@@ -34,6 +60,11 @@ def parse_fleur_out_xml(filename: Path) -> dict:
     results["pbc"]      = ase_obj.get_pbc().tolist()
     results["numbers"]  = ase_obj.get_atomic_numbers().tolist()
     results["symbols"]  = ase_obj.get_chemical_symbols()
+    
+    inp_path = filename.parent / "inp.xml"
+    if inp_path.is_file():
+        disp = structure_displacement(inp_path, filename)
+        results.update(disp)
     return results
 
 

@@ -21,7 +21,6 @@ from dft_organizer.fleur_parser import (
     save_report as save_report_fleur,
 )
 
-
 def scan_calculations(
     root_dir: Path,
     aiida: bool = False,
