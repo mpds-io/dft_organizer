@@ -1,7 +1,31 @@
 from pathlib import Path
-
+import numpy as np
 from pycrystal import CRYSTOUT, CRYSTOUT_Error
 
+
+def _structure_displacement(structures: list) -> dict:
+    """
+    Compute integral displacement between first and last structures.
+    Returns sum of squared displacements and RMSD.
+    """
+    if not structures or len(structures) < 2:
+        return {"sum_sq_disp": float("nan"), "rmsd_disp": float("nan")}
+
+    first = structures[0]
+    last = structures[-1]
+
+    pos_init = np.array(first.positions, dtype=float)
+    pos_final = np.array(last.positions, dtype=float)
+
+    if pos_init.shape != pos_final.shape:
+        return {"sum_sq_disp": float("nan"), "rmsd_disp": float("nan")}
+
+    disp = pos_final - pos_init              
+    sq = np.sum(disp**2, axis=1)             
+    sum_sq = float(np.sum(sq))                
+    rmsd = float(np.sqrt(np.mean(sq)))        
+
+    return {"sum_sq_disp": sum_sq, "rmsd_disp": rmsd}
 
 def parse_crystal_output(path: Path) -> dict:
     """Parse CRYSTAL OUTPUT file into a flat results dict."""
@@ -60,6 +84,10 @@ def parse_crystal_output(path: Path) -> dict:
         results["pbc"] = float("nan")
         results["numbers"] = float("nan")
         results["symbols"] = float("nan")
+        
+    # integral displacement metrics
+    disp_metrics = _structure_displacement(structs if isinstance(structs, list) else [])
+    results.update(disp_metrics)
 
     return results
 
