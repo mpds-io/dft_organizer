@@ -50,7 +50,7 @@ def parse_crystal_output(path: Path) -> dict:
 
     energy = content.get("energy", float("nan"))
     results["total_energy"] = energy
-    results["energy_hartree"] = energy / 27.2114 if energy == energy else float("nan")
+    results["energy_hartree"] = energy / 27.2114 if energy != None else float("nan")
 
     try:
         results["duration"] = float(content.get("duration", float("nan")))

@@ -266,3 +266,7 @@ def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
     print("\n" + "=" * 60)
     print("REPORTS GENERATION COMPLETE")
     print("=" * 60 + "\n")
+
+
+if __name__ == "__main__":
+    scan_calculations(Path("/data/aiida_crystal_base"))
