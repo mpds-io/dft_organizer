@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import psycopg2
 from aiida import load_profile
-from aiida.orm import load_node
+from aiida.orm import load_node, StructureData
 
 
-PROFILE_NAME = "presto_pg"  
+PROFILE_NAME = "presto_pg"
 CONFIG_PATH = Path("~/.aiida/config.json").expanduser()
 
 
@@ -23,7 +23,6 @@ class LinkRecord:
     input_uuid: str
     output_uuid: str
     path: str
-
 
 
 def load_db_config(profile: str) -> dict:
@@ -42,6 +41,7 @@ def fetch_tree_from_db(conn, start_pk: int) -> List[LinkRecord]:
     cur = conn.cursor()
     records: List[LinkRecord] = []
 
+    # down
     sql_down = """
     WITH RECURSIVE path_down(input_id, output_id, depth, path) AS (
       SELECT link.input_id,
@@ -81,6 +81,7 @@ def fetch_tree_from_db(conn, start_pk: int) -> List[LinkRecord]:
             )
         )
 
+    # up
     sql_up = """
     WITH RECURSIVE path_up(input_id, output_id, depth, path) AS (
       SELECT link.input_id,
@@ -125,7 +126,6 @@ def fetch_tree_from_db(conn, start_pk: int) -> List[LinkRecord]:
 
 
 def find_first_last_pks(conn, start_pk: int) -> Tuple[int, int]:
-    """Найти самый верхний предок и самый дальний потомок по pk."""
     cur = conn.cursor()
 
     sql_up = """
@@ -172,51 +172,103 @@ def find_first_last_pks(conn, start_pk: int) -> Tuple[int, int]:
     return first_pk, last_pk
 
 
+def _node_short_info(pk: int):
+    node = load_node(pk)
+    base = f"pk={pk} {node.__class__.__name__}"
+    if hasattr(node, "process_label") and node.process_label:
+        return f"{base} ({node.process_label})"
+    if getattr(node, "label", None):
+        return f"{base} (label='{node.label}')"
+    return base
+
+
+
+def _node_has_structure(node) -> bool:
+    if isinstance(node, StructureData):
+        return True
+    if hasattr(node, "outputs") and "structure" in node.outputs:
+        return isinstance(node.outputs["structure"], StructureData)
+    return False
+
+
+def _collect_structure_nodes(links: List[LinkRecord]) -> List[int]:
+    """Собираем все pk нод, где есть структура (input и output), без дубликатов."""
+    pks: set[int] = set()
+    for r in links:
+        for pk in (r.input_id, r.output_id):
+            if pk in pks:
+                continue
+            node = load_node(pk)
+            if _node_has_structure(node):
+                pks.add(pk)
+    return sorted(pks)
+
+
+def find_first_last_structure_uuids(links: List[LinkRecord]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    По already-восстановленному дереву links находим
+    самую раннюю и самую позднюю ноду со структурой (по pk).
+    Возвращаем их UUID (или None, если структур нет).
+    """
+    struct_pks = _collect_structure_nodes(links)
+    if not struct_pks:
+        return None, None
+
+    first_pk = struct_pks[0]
+    last_pk = struct_pks[-1]
+
+    first_node = load_node(first_pk)
+    last_node = load_node(last_pk)
+
+    return str(first_node.uuid), str(last_node.uuid)
+
+
+
+
 def main(uuid: str):
-    # get key by id
     load_profile(PROFILE_NAME)
     start_node = load_node(uuid)
     start_pk = start_node.pk
-    print(f"Start node: pk={start_pk}, uuid={start_node.uuid}")
+    print(f"Start node: {_node_short_info(start_pk)}, uuid={start_node.uuid}")
 
-    # connect to postgres
     db_cfg = load_db_config(PROFILE_NAME)
     conn = psycopg2.connect(**db_cfg)
 
     try:
         links = fetch_tree_from_db(conn, start_pk)
 
-        # first and last keys
         first_pk, last_pk = find_first_last_pks(conn, start_pk)
-        first_node = load_node(first_pk)
-        last_node = load_node(last_pk)
-        print(
-            f"\nFIRST node:  pk={first_pk}, uuid={first_node.uuid}, "
-            f"type={first_node.__class__.__name__}"
-        )
-        print(
-            f"LAST  node:  pk={last_pk}, uuid={last_node.uuid}, "
-            f"type={last_node.__class__.__name__}"
-        )
+        print(f"\nFIRST node (any type):  {_node_short_info(first_pk)}")
+        print(f"LAST  node (any type):  {_node_short_info(last_pk)}")
+
+        first_struct_uuid, last_struct_uuid = find_first_last_structure_uuids(links)
+        print("\n=== STRUCTURES ===")
+        if first_struct_uuid is None:
+            print("No StructureData nodes found in this provenance tree.")
+        else:
+            print(f"First  StructureData uuid: {first_struct_uuid}")
+            print(f"Last   StructureData uuid: {last_struct_uuid}")
 
         print("\n--- DOWNSTREAM ---")
         for r in [x for x in links if x.direction == "down"]:
+            in_info = _node_short_info(r.input_id)
+            out_info = _node_short_info(r.output_id)
             print(
                 f"[depth={r.depth}] {r.path}  "
-                f"(input {r.input_id}:{r.input_uuid} -> "
-                f"output {r.output_id}:{r.output_uuid})"
+                f"(input {in_info} -> output {out_info})"
             )
 
         print("\n--- UPSTREAM ---")
         for r in [x for x in links if x.direction == "up"]:
+            in_info = _node_short_info(r.input_id)
+            out_info = _node_short_info(r.output_id)
             print(
                 f"[depth={r.depth}] {r.path}  "
-                f"(input {r.input_id}:{r.input_uuid} -> "
-                f"output {r.output_id}:{r.output_uuid})"
+                f"(input {in_info} -> output {out_info})"
             )
     finally:
         conn.close()
 
 
 if __name__ == "__main__":
-    main(uuid = "ea07996a-f036-474b-bfb3-f95b45e26981" )
+    main(uuid="2c358d20-ed46-4c4e-9b07-b2177cd56054")
