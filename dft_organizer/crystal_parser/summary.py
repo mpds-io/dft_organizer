@@ -3,76 +3,69 @@ from pathlib import Path
 from pycrystal import CRYSTOUT, CRYSTOUT_Error
 
 
-def parse_crystal_output(path: Path):
-    """Parse CRYSTAL output file safely using dictionary-style access"""
+def parse_crystal_output(path: Path) -> dict:
+    """Parse CRYSTAL OUTPUT file into a flat results dict."""
     try:
-        content: dict = CRYSTOUT(str(path)).info
-    except CRYSTOUT_Error as e:
+        co = CRYSTOUT(str(path))
+        content: dict = co.info
+    except CRYSTOUT_Error:
         print(f"CRYSTAL OUTPUT file: {path} is not readable!")
         return {
-            "bandgap": None,
-            "cpu_time": None,
-            "total_energy": None,
-            "s_pop": None,
-            "p_pop": None,
-            "d_pop": None,
-            "total_pop": None,
+            "bandgap": float("nan"),
+            "duration": float("nan"),
+            "total_energy": float("nan"),      # eV
+            "energy_hartree": float("nan"),    # Ha
+            "cell": float("nan"),
+            "positions": float("nan"),
+            "pbc": float("nan"),
+            "numbers": float("nan"),
+            "symbols": float("nan"),
         }
 
-    # electrons -> basis_set -> bs
-    mulliken_dict = {}
-    if (
-        "electrons" in content
-        and "basis_set" in content["electrons"]
-        and "bs" in content["electrons"]["basis_set"]
-    ):
-        mulliken_dict = content["electrons"]["basis_set"]["bs"]
+    results: dict = {}
 
-    def sum_orbital(orb_type):
-        total = 0.0
-        for atom, shells in mulliken_dict.items():
-            for shell in shells:
-                if not shell or shell[0] != orb_type:
-                    continue
-                for pair in shell[1:]:
-                    if len(pair) >= 2:
-                        total += pair[1]
-        return total
+    energy = content.get("energy", float("nan"))
+    results["total_energy"] = energy
+    results["energy_hartree"] = energy / 27.2114 if energy == energy else float("nan")
 
-    s_pop = sum_orbital("S")
-    p_pop = sum_orbital("P")
-    d_pop = sum_orbital("D")
-    total_pop = s_pop + p_pop + d_pop
-
-    # bandgap
-    bandgap = None
-    if (
-        "conduction" in content
-        and isinstance(content["conduction"], list)
-        and len(content["conduction"]) > 0
-    ):
-        bandgap = content["conduction"][-1].get("band_gap", None)
-
-    # duration, energy
     try:
-        cpu_time = float(content["duration"])
-    except:
-        cpu_time = None
-    total_energy = content.get("energy", None)
+        results["duration"] = float(content.get("duration", float("nan")))
+    except Exception:
+        results["duration"] = float("nan")
 
-    return {
-        "bandgap": bandgap,
-        "cpu_time": cpu_time,
-        "total_energy": total_energy,
-        "s_pop": s_pop,
-        "p_pop": p_pop,
-        "d_pop": d_pop,
-        "total_pop": total_pop,
-    }
+    # band gap
+    bandgap = float("nan")
+    cond = content.get("conduction")
+    if isinstance(cond, list) and cond:
+        bg = cond[-1].get("band_gap", None)
+        if bg is not None:
+            bandgap = float(bg)
+    results["bandgap"] = bandgap
+
+    # last structure
+    try:
+        structs = content.get("structures", [])
+        if structs:
+            ase_obj = structs[-1]
+            results["cell"]     = ase_obj.get_cell().tolist()
+            results["positions"] = ase_obj.get_positions().tolist()
+            results["pbc"]      = ase_obj.get_pbc().tolist()
+            results["numbers"]  = ase_obj.get_atomic_numbers().tolist()
+            results["symbols"]  = ase_obj.get_chemical_symbols()
+        else:
+            raise KeyError
+    except Exception:
+        results["cell"] = float("nan")
+        results["positions"] = float("nan")
+        results["pbc"] = float("nan")
+        results["numbers"] = float("nan")
+        results["symbols"] = float("nan")
+
+    return results
 
 
 if __name__ == "__main__":
     res = parse_crystal_output(
-        "/root/projects/dft_organizer/playground_data/20250701_124402_81/OUTPUT"
+        Path("/data/aiida_crystal_base/0a/2f/a4e3-fb3e-4419-b02f-b1a50c762872/OUTPUT")
     )
     print(res)
