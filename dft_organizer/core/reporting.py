@@ -183,6 +183,8 @@ def scan_calculations(
                 current_dir, filenames, error_dict_fleur
             )
 
+    # TODO: case for crystal (another function)
+    # TODO: rm crystal rows for correctness
     if aiida and summary_store:
         enrich_fleur_with_displacement(summary_store)
 
