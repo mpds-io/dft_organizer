@@ -116,8 +116,8 @@ def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
                 ase_first = first_struct.get_ase()
                 ase_last = last_struct.get_ase()
                 disp = structure_displacement_ase(ase_first, ase_last)
-                summary["sum_sq_disp"] = disp["sum_sq_disp"]
-                summary["rmsd_disp"] = disp["rmsd_disp"]
+                summary["sum_sq_disp"] = round(disp["sum_sq_disp"], 2)
+                summary["rmsd_disp"]   = round(disp["rmsd_disp"], 2)
             except Exception as e:
                 print(f"Cannot compute displacement for CalcJob {calc_uuid}: {e}")
                 continue
@@ -183,8 +183,6 @@ def scan_calculations(
                 current_dir, filenames, error_dict_fleur
             )
 
-    # TODO: case for crystal (another function)
-    # TODO: rm crystal rows for correctness
     if aiida and summary_store:
         enrich_fleur_with_displacement(summary_store)
 
@@ -368,4 +366,10 @@ def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    scan_calculations(Path("/root/projects/dft_organizer/fleur_test"), aiida=True, verbose=True)
+    import pandas as pd
+    
+    summary_store, err_cr, err_fl = scan_calculations(Path("/root/projects/dft_organizer/fleur_test"), aiida=True, verbose=True)
+    df = pd.DataFrame(summary_store)
+    df.to_csv('res_fleur_05_12.csv')
+    root_path = Path("./")
+    save_reports(root_path, summary_store, err_cr, err_fl)

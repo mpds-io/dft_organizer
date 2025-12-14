@@ -1,13 +1,36 @@
 from pathlib import Path
+import math
 import numpy as np
 from pycrystal import CRYSTOUT, CRYSTOUT_Error
+from ase.geometry import cell_to_cellpar
+
+
+def round_floats(obj, ndigits: int = 2):
+    """Recursively round all numeric values in dict/list/tuple to ndigits."""
+    if isinstance(obj, dict):
+        return {k: round_floats(v, ndigits) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple)):
+        t = [round_floats(v, ndigits) for v in obj]
+        return t if isinstance(obj, list) else tuple(t)
+
+    # numpy scalars -> python scalars
+    if isinstance(obj, np.generic):
+        obj = obj.item()
+
+    # bool is subclass of int -> exclude it
+    if isinstance(obj, bool):
+        return obj
+
+    if isinstance(obj, (int, float)):
+        if isinstance(obj, float) and not math.isfinite(obj):
+            return obj  # keep nan/inf as-is
+        return round(obj, ndigits)
+
+    return obj
 
 
 def _structure_displacement(structures: list) -> dict:
-    """
-    Compute integral displacement between first and last structures.
-    Returns sum of squared displacements and RMSD.
-    """
     if not structures or len(structures) < 2:
         return {"sum_sq_disp": float("nan"), "rmsd_disp": float("nan")}
 
@@ -20,38 +43,42 @@ def _structure_displacement(structures: list) -> dict:
     if pos_init.shape != pos_final.shape:
         return {"sum_sq_disp": float("nan"), "rmsd_disp": float("nan")}
 
-    disp = pos_final - pos_init              
-    sq = np.sum(disp**2, axis=1)             
-    sum_sq = float(np.sum(sq))                
-    rmsd = float(np.sqrt(np.mean(sq)))        
+    disp = pos_final - pos_init
+    sq = np.sum(disp**2, axis=1)
+    return {
+        "sum_sq_disp": float(np.sum(sq)),
+        "rmsd_disp": float(np.sqrt(np.mean(sq))),
+    }
 
-    return {"sum_sq_disp": sum_sq, "rmsd_disp": rmsd}
 
 def parse_crystal_output(path: Path) -> dict:
-    """Parse CRYSTAL OUTPUT file into a flat results dict."""
     try:
         co = CRYSTOUT(str(path))
         content: dict = co.info
     except CRYSTOUT_Error:
         print(f"CRYSTAL OUTPUT file: {path} is not readable!")
-        return {
-            "bandgap": float("nan"),
-            "duration": float("nan"),
-            "total_energy": float("nan"),      # eV
-            "energy_hartree": float("nan"),    # Ha
-            "cell": float("nan"),
-            "positions": float("nan"),
-            "pbc": float("nan"),
-            "numbers": float("nan"),
-            "symbols": float("nan"),
-        }
+        return round_floats(
+            {
+                "bandgap": float("nan"),
+                "duration": float("nan"),
+                "total_energy": float("nan"),   # eV
+                "energy_hartree": float("nan"), # Ha
+                "cell": float("nan"),
+                "sum_sq_disp": float("nan"),
+                "rmsd_disp": float("nan"),
+            },
+            2,
+        )
 
     results: dict = {}
 
     energy = content.get("energy", float("nan"))
-    results["total_energy"] = energy
-    results["energy_hartree"] = energy / 27.2114 if energy != None else float("nan")
+    results["total_energy"] = float("nan") if energy is None else float(energy)
+    results["energy_hartree"] = (
+        float("nan") if energy is None else float(energy) / 27.2114
+    )
 
+    # duration
     try:
         results["duration"] = float(content.get("duration", float("nan")))
     except Exception:
@@ -66,30 +93,32 @@ def parse_crystal_output(path: Path) -> dict:
             bandgap = float(bg)
     results["bandgap"] = bandgap
 
-    # last structure
+    # last structure: cell -> cellpar
+    structs = content.get("structures", [])
     try:
-        structs = content.get("structures", [])
         if structs:
             ase_obj = structs[-1]
-            results["cell"]     = ase_obj.get_cell().tolist()
-            results["positions"] = ase_obj.get_positions().tolist()
-            results["pbc"]      = ase_obj.get_pbc().tolist()
-            results["numbers"]  = ase_obj.get_atomic_numbers().tolist()
-            results["symbols"]  = ase_obj.get_chemical_symbols()
+            a, b, c, alpha, beta, gamma = cell_to_cellpar(ase_obj.get_cell())  # [a,b,c,alpha,beta,gamma][web:21]
+            results["a"] = round(float(a), 2)
+            results["b"] = round(float(b), 2)
+            results["c"] = round(float(c), 2)
+            results["alpha"] = round(float(alpha), 2)
+            results["beta"] = round(float(beta), 2)
+            results["gamma"] = round(float(gamma), 2)
         else:
             raise KeyError
     except Exception:
-        results["cell"] = float("nan")
-        results["positions"] = float("nan")
-        results["pbc"] = float("nan")
-        results["numbers"] = float("nan")
-        results["symbols"] = float("nan")
-        
-    # integral displacement metrics
-    disp_metrics = _structure_displacement(structs if isinstance(structs, list) else [])
-    results.update(disp_metrics)
+        results["a"] = float("nan")
+        results["b"] = float("nan")
+        results["c"] = float("nan")
+        results["alpha"] = float("nan")
+        results["beta"] = float("nan")
+        results["gamma"] = float("nan")
 
-    return results
+    # displacement metrics
+    results.update(_structure_displacement(structs if isinstance(structs, list) else []))
+
+    return round_floats(results, 2)
 
 
 if __name__ == "__main__":
