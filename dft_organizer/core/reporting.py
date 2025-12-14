@@ -68,7 +68,6 @@ def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
     - Adds to the summary:
     'first_struct_uuid', 'last_struct_uuid',
     'sum_sq_disp', 'rmsd_disp',
-    'is_last_structure' (True if this CalcJob is associated with last_struct).
     Modifies summary_store in-place.
     """
     load_profile(PROFILE_NAME)
@@ -87,7 +86,6 @@ def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
             summary["last_struct_uuid"] = None
             summary["sum_sq_disp"] = None
             summary["rmsd_disp"] = None
-            summary["is_last_structure"] = False
 
             try:
                 calc = load_node(calc_uuid)
@@ -122,7 +120,6 @@ def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
                 print(f"Cannot compute displacement for CalcJob {calc_uuid}: {e}")
                 continue
 
-            summary["is_last_structure"] = calc_uuid == last_s_uuid
     finally:
         conn.close()
 
