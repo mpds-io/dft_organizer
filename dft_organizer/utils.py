@@ -1,4 +1,5 @@
-import polars as pl 
+import polars as pl
+
 from dft_organizer.crystal_parser import parse_crystal_output
 from dft_organizer.fleur_parser import parse_fleur_output
 from dft_organizer.fmt import detect_calculation_code
@@ -21,16 +22,17 @@ def get_table_string(res: dict) -> str:
     lines.append("-" * 50)
 
     rows = [
-        ("Total Energy (eV)",     fmt(res.get("total_energy"))),
-        ("Total Energy (Ha)",     fmt(res.get("energy_hartree"))),
-        ("Duration (h)",          fmt(res.get("duration"), prec=4)),
-        ("Band Gap (eV)",         fmt(res.get("bandgap"))),
+        ("Total Energy (eV)", fmt(res.get("total_energy"))),
+        ("Total Energy (Ha)", fmt(res.get("energy_hartree"))),
+        ("Duration (h)", fmt(res.get("duration"), prec=4)),
+        ("Band Gap (eV)", fmt(res.get("bandgap"))),
     ]
 
     for label, val in rows:
         lines.append(f"{label:<25} {val:<20}")
 
     return "\n".join(lines)
+
 
 def detect_engine(filenames: list, current_dir) -> dict:
     """Detect DFT engine based on presence of specific files"""
@@ -86,4 +88,3 @@ def create_summary_table(path_dict: dict) -> pl.DataFrame:
         summary_data.append(row_data)
 
     return pl.DataFrame(summary_data)
-

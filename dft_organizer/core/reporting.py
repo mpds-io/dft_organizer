@@ -365,7 +365,7 @@ def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
 if __name__ == "__main__":
     import pandas as pd
     
-    summary_store, err_cr, err_fl = scan_calculations(Path("/root/projects/dft_organizer/fleur_test"), aiida=True, verbose=True)
+    summary_store, err_cr, err_fl = scan_calculations(Path("/data/aiida_backup_05_12"), aiida=True, verbose=True)
     df = pd.DataFrame(summary_store)
     df.to_csv('res_fleur_05_12.csv')
     root_path = Path("./")

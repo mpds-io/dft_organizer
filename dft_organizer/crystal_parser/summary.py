@@ -4,6 +4,8 @@ import numpy as np
 from pycrystal import CRYSTOUT, CRYSTOUT_Error
 from ase.geometry import cell_to_cellpar
 
+from dft_organizer.ase_utils import get_formula
+
 
 def round_floats(obj, ndigits: int = 2):
     """Recursively round all numeric values in dict/list/tuple to ndigits."""
@@ -66,6 +68,7 @@ def parse_crystal_output(path: Path) -> dict:
                 "cell": float("nan"),
                 "sum_sq_disp": float("nan"),
                 "rmsd_disp": float("nan"),
+                "chemical_formula": "",
             },
             2,
         )
@@ -98,13 +101,14 @@ def parse_crystal_output(path: Path) -> dict:
     try:
         if structs:
             ase_obj = structs[-1]
-            a, b, c, alpha, beta, gamma = cell_to_cellpar(ase_obj.get_cell())  # [a,b,c,alpha,beta,gamma][web:21]
+            a, b, c, alpha, beta, gamma = cell_to_cellpar(ase_obj.get_cell())  # [a,b,c,alpha,beta,gamma]
             results["a"] = round(float(a), 2)
             results["b"] = round(float(b), 2)
             results["c"] = round(float(c), 2)
             results["alpha"] = round(float(alpha), 2)
             results["beta"] = round(float(beta), 2)
             results["gamma"] = round(float(gamma), 2)
+            results["chemical_formula"] = get_formula(ase_obj, find_gcd=True)
         else:
             raise KeyError
     except Exception:
@@ -114,6 +118,7 @@ def parse_crystal_output(path: Path) -> dict:
         results["alpha"] = float("nan")
         results["beta"] = float("nan")
         results["gamma"] = float("nan")
+        results["chemical_formula"] = ""
 
     # displacement metrics
     results.update(_structure_displacement(structs if isinstance(structs, list) else []))

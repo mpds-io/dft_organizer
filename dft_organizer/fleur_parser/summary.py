@@ -5,7 +5,9 @@ from pathlib import Path
 import numpy as np
 from masci_tools.io.parsers.fleur import outxml_parser
 from ase.io import read
-from ase.geometry import cell_to_cellpar 
+from ase.geometry import cell_to_cellpar
+
+from dft_organizer.ase_utils import get_formula 
 
 
 def round_floats(obj, ndigits: int = 2):
@@ -31,16 +33,6 @@ def round_floats(obj, ndigits: int = 2):
     return obj
 
 
-def structure_displacement(initial_file: Path, final_file: Path) -> dict:
-    """
-    Compute integral displacement between initial and optimized structures.
-    Returns sum of squared displacements and RMSD.
-    """
-    # TODO: implement properly 
-    # (code exists in reporting.py)
-    return {"sum_sq_disp": 0.0, "rmsd_disp": 0.0}
-
-
 def _nan_cellpar_results() -> dict:
     return {
         "a": float("nan"),
@@ -49,6 +41,7 @@ def _nan_cellpar_results() -> dict:
         "alpha": float("nan"),
         "beta": float("nan"),
         "gamma": float("nan"),
+        "chemical_formula": "",
     }
 
 
@@ -86,6 +79,7 @@ def parse_fleur_out_xml(filename: Path) -> dict:
                 "alpha": float(alpha),
                 "beta": float(beta),
                 "gamma": float(gamma),
+                "chemical_formula": get_formula(ase_obj, find_gcd=True)
             }
         )
     except Exception as e:
@@ -93,12 +87,13 @@ def parse_fleur_out_xml(filename: Path) -> dict:
         results.update(_nan_cellpar_results())
         results["sum_sq_disp"] = float("nan")
         results["rmsd_disp"] = float("nan")
+        results["chemical_formula"] = ""
         return round_floats(results, 2)
 
     # displacement metrics
     inp_path = filename.parent / "inp.xml"
     if inp_path.is_file():
-        disp = structure_displacement(inp_path, filename)
+        disp = {"sum_sq_disp": 0.0, "rmsd_disp": 0.0}
         results.update(disp)
     else:
         results["sum_sq_disp"] = float("nan")
