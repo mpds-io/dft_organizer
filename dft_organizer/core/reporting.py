@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import math
 
 import json
 import polars as pl
@@ -128,9 +129,16 @@ def scan_calculations(
     root_dir: Path,
     aiida: bool = False,
     verbose: bool = True,
+    skip_errors: bool = False
 ) -> tuple[list[dict[str, Any]], dict, dict]:
     """
     Go through directory tree, parse outputs and generate error reports.
+    
+    Parameters:
+    - root_dir: Path to the root directory to scan.
+    - aiida: Whether to extract UUIDs based on AiiDA path structure.
+    - verbose: Whether to print summaries to stdout.
+    - skip_errors: Whether to skip entries with parsing errors in the summary.
     """
     root_path = Path(root_dir).resolve()
 
@@ -153,6 +161,8 @@ def scan_calculations(
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
+            if skip_errors and math.isnan(summary['duration']):
+                continue
             summary_store.append(summary)
             if verbose:
                 print("CRYSTAL OUTPUT FOUND:")
@@ -166,6 +176,9 @@ def scan_calculations(
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
+            if skip_errors and (math.isnan(summary['duration']) or \
+                                math.isnan(summary["total_energy"])):
+                continue
             summary_store.append(summary)
             if verbose:
                 print("FLEUR OUTPUT FOUND:")
@@ -335,7 +348,7 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
         return None
 
 
-def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
+def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False) -> None:
     """
     Scan a calculation tree, print a short summary to stdout
     and save a summary CSV plus error reports.
@@ -353,6 +366,7 @@ def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
         root_path,
         aiida=aiida,
         verbose=True,
+        skip_errors=skip_errors
     )
 
     save_reports(root_path, summary_store, err_cr, err_fl)
@@ -363,10 +377,9 @@ def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    import pandas as pd
     
-    summary_store, err_cr, err_fl = scan_calculations(Path("/data/aiida_backup_05_12"), aiida=True, verbose=True)
-    df = pd.DataFrame(summary_store)
-    df.to_csv('res_fleur_05_12.csv')
-    root_path = Path("./")
-    save_reports(root_path, summary_store, err_cr, err_fl)
+    # summary_store, err_cr, err_fl = scan_calculations(Path("/data/aiida"), aiida=True, verbose=True)
+    # root_path = Path("./")
+    # save_reports(root_path, summary_store, err_cr, err_fl)
+    
+    generate_reports_only(Path("/data/aiida_backup_17_12_25"), aiida=True, skip_errors=True)

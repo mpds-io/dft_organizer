@@ -65,7 +65,6 @@ def parse_crystal_output(path: Path) -> dict:
                 "duration": float("nan"),
                 "total_energy": float("nan"),   # eV
                 "energy_hartree": float("nan"), # Ha
-                "cell": float("nan"),
                 "sum_sq_disp": float("nan"),
                 "rmsd_disp": float("nan"),
                 "chemical_formula": "",
