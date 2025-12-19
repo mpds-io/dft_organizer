@@ -22,7 +22,7 @@ Requires Python ≥ 3.11
 
 Dependencies:
 - click ≥ 8.1
-- pandas
+- polars
 - 7z (command-line tool)
 
 Install via pip:
@@ -95,7 +95,7 @@ Creates under parent directory:
 
 ```
 from pathlib import Path
-from dft_organizer.archiver import archive_and_remove
+from dft_organizer.core import archive_and_remove
 
 archive_and_remove(
 	Path("./my_calc_dir"),
@@ -110,7 +110,7 @@ archive_and_remove(
 
 ```
 from pathlib import Path
-from dft_organizer.re_archiver import restore_archives_iterative
+from dft_organizer.core import restore_archives_iterative
 
 restore_archives_iterative(
 	Path("./archive_dir.7z"),
@@ -119,6 +119,16 @@ restore_archives_iterative(
 	aiida=True,
 	skip_errors=False
 )
+```
+
+### Generate summary for all calculations, skip errors
+
+```
+from dft_organizer.core import generate_reports_only
+from pathlib import Path
+
+generate_reports_only(Path("/data/aiida"), aiida=True, skip_errors=True)
+
 ```
 
 
