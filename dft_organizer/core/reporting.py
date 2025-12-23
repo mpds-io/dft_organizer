@@ -384,4 +384,4 @@ if __name__ == "__main__":
     # root_path = Path("./")
     # save_reports(root_path, summary_store, err_cr, err_fl)
     
-    generate_reports_only(Path("dft_organizer/fleur_data_part"), aiida=True, skip_errors=True)
+    generate_reports_only(Path("/root/projects/dft_organizer/dft_organizer/fleur_data_part"), aiida=True, skip_errors=True)

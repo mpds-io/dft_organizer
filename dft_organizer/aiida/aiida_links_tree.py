@@ -31,7 +31,7 @@ def load_db_config(profile: str) -> dict:
     return {
         "host": pconf["database_hostname"],
         "port": pconf["database_port"],
-        "dbname": pconf["database_name"],
+        "database": pconf["database_name"],  
         "user": pconf["database_username"],
         "password": pconf["database_password"],
     }
@@ -49,7 +49,7 @@ def fetch_tree_from_db(conn, start_pk: int) -> List[LinkRecord]:
              0::INT AS depth,
              (link.input_id::TEXT || '->' || link.output_id::TEXT) AS path
       FROM db_dblink AS link
-      WHERE link.input_id = %(start_pk)s
+      WHERE link.input_id = %s
     UNION ALL
       SELECT existing.input_id,
              newlink.output_id,
@@ -67,7 +67,7 @@ def fetch_tree_from_db(conn, start_pk: int) -> List[LinkRecord]:
     JOIN db_dbnode AS n_out ON n_out.id = p.output_id
     ORDER BY p.depth, p.output_id ASC;
     """
-    cur.execute(sql_down, {"start_pk": start_pk})
+    cur.execute(sql_down, (start_pk,))  
     for input_id, output_id, depth, path, in_uuid, out_uuid in cur.fetchall():
         records.append(
             LinkRecord(
@@ -89,7 +89,7 @@ def fetch_tree_from_db(conn, start_pk: int) -> List[LinkRecord]:
              0::INT AS depth,
              (link.input_id::TEXT || '->' || link.output_id::TEXT) AS path
       FROM db_dblink AS link
-      WHERE link.output_id = %(start_pk)s
+      WHERE link.output_id = %s
     UNION ALL
       SELECT newlink.input_id,
              existing.output_id,
@@ -107,7 +107,7 @@ def fetch_tree_from_db(conn, start_pk: int) -> List[LinkRecord]:
     JOIN db_dbnode AS n_out ON n_out.id = p.output_id
     ORDER BY p.depth, p.input_id ASC;
     """
-    cur.execute(sql_up, {"start_pk": start_pk})
+    cur.execute(sql_up, (start_pk,))  #tuple
     for input_id, output_id, depth, path, in_uuid, out_uuid in cur.fetchall():
         records.append(
             LinkRecord(
@@ -132,7 +132,7 @@ def find_first_last_pks(conn, start_pk: int) -> Tuple[int, int]:
     WITH RECURSIVE path_up AS (
       SELECT link.input_id, link.output_id, 0::INT AS depth
       FROM db_dblink AS link
-      WHERE link.output_id = %(start_pk)s
+      WHERE link.output_id = %s
     UNION ALL
       SELECT newlink.input_id, existing.output_id, existing.depth + 1 AS depth
       FROM path_up AS existing
@@ -144,7 +144,7 @@ def find_first_last_pks(conn, start_pk: int) -> Tuple[int, int]:
     ORDER BY depth DESC
     LIMIT 1;
     """
-    cur.execute(sql_up, {"start_pk": start_pk})
+    cur.execute(sql_up, (start_pk,))  
     row = cur.fetchone()
     first_pk = row[0] if row else start_pk
 
@@ -152,7 +152,7 @@ def find_first_last_pks(conn, start_pk: int) -> Tuple[int, int]:
     WITH RECURSIVE path_down AS (
       SELECT link.input_id, link.output_id, 0::INT AS depth
       FROM db_dblink AS link
-      WHERE link.input_id = %(start_pk)s
+      WHERE link.input_id = %s
     UNION ALL
       SELECT existing.input_id, newlink.output_id, existing.depth + 1 AS depth
       FROM path_down AS existing
@@ -164,7 +164,7 @@ def find_first_last_pks(conn, start_pk: int) -> Tuple[int, int]:
     ORDER BY depth DESC
     LIMIT 1;
     """
-    cur.execute(sql_down, {"start_pk": start_pk})
+    cur.execute(sql_down, (start_pk,))  
     row = cur.fetchone()
     last_pk = row[0] if row else start_pk
 
