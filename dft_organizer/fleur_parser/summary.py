@@ -65,7 +65,6 @@ def parse_fleur_out_xml(filename: Path) -> dict:
     results["duration"] = walltime_sec / 3600 if walltime_sec else float("nan")
 
     results["bandgap"] = parsed_data.get("bandgap", float("nan"))
-    results["energy_hartree"] = parsed_data.get("energy_hartree", float("nan"))
 
     # structure -> cellpar columns
     try:
@@ -122,10 +121,8 @@ def parse_fleur_output(filename: Path) -> dict:
     energy_match = re.search(r"total energy=\s*([-\d\.E+]+)", content)
     if energy_match:
         results["total_energy"] = float(energy_match.group(1))
-        results["energy_hartree"] = results["total_energy"] / 27.2114
     else:
         results["total_energy"] = float("nan")
-        results["energy_hartree"] = float("nan")
 
     time_match = re.search(r"Total execution time:\s*(\d+)sec", content)
     results["duration"] = float(time_match.group(1)) / 3600 if time_match else float("nan")
