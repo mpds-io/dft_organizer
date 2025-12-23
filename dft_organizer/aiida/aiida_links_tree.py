@@ -192,7 +192,7 @@ def _node_has_structure(node) -> bool:
 
 
 def _collect_structure_nodes(links: List[LinkRecord]) -> List[int]:
-    """Собираем все pk нод, где есть структура (input и output), без дубликатов."""
+    """Collect all pk nodes where there is a structure (input and output), without duplicates."""
     pks: set[int] = set()
     for r in links:
         for pk in (r.input_id, r.output_id):
@@ -206,9 +206,8 @@ def _collect_structure_nodes(links: List[LinkRecord]) -> List[int]:
 
 def find_first_last_structure_uuids(links: List[LinkRecord]) -> Tuple[Optional[str], Optional[str]]:
     """
-    По already-восстановленному дереву links находим
-    самую раннюю и самую позднюю ноду со структурой (по pk).
-    Возвращаем их UUID (или None, если структур нет).
+    Using the already restored wooden link, we find the lower rank and lower late node with the structure (by rk).
+    We return their UUIDs (or None if there is no structure).
     """
     struct_pks = _collect_structure_nodes(links)
     if not struct_pks:
