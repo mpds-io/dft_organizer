@@ -64,7 +64,6 @@ def parse_crystal_output(path: Path) -> dict:
                 "bandgap": float("nan"),
                 "duration": float("nan"),
                 "total_energy": float("nan"),   # eV
-                "energy_hartree": float("nan"), # Ha
                 "sum_sq_disp": float("nan"),
                 "rmsd_disp": float("nan"),
                 "chemical_formula": "",
@@ -76,10 +75,6 @@ def parse_crystal_output(path: Path) -> dict:
 
     energy = content.get("energy", float("nan"))
     results["total_energy"] = float("nan") if energy is None else float(energy)
-    results["energy_hartree"] = (
-        float("nan") if energy is None else float(energy) / 27.2114
-    )
-
     # duration
     try:
         results["duration"] = float(content.get("duration", float("nan")))
