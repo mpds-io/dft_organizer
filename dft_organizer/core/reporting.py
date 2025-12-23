@@ -37,7 +37,7 @@ PROFILE_NAME = "presto_pg"
 
 
 def _get_structure_from_uuid(uuid: str) -> StructureData:
-    """Загрузить StructureData по UUID ноды (сама или outputs.structure)."""
+    """Upload StructureData node by UUID"""
     node = load_node(uuid)
     if isinstance(node, StructureData):
         return node
