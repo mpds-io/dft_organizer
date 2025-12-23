@@ -9,7 +9,7 @@ import polars as pl
 
 from aiida import load_profile
 from aiida.orm import load_node, StructureData
-import psycopg2
+import pg8000
 import numpy as np
 
 from dft_organizer.aiida_utils import extract_uuid_from_path
@@ -73,7 +73,7 @@ def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
     """
     load_profile(PROFILE_NAME)
     db_cfg = load_db_config(PROFILE_NAME)
-    conn = psycopg2.connect(**db_cfg)
+    conn = pg8000.connect(**db_cfg)
 
     try:
         for summary in summary_store:
@@ -176,6 +176,8 @@ def scan_calculations(
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
+            if summary["total_energy"] is None:
+                summary["total_energy"] = float("nan")
             if skip_errors and (math.isnan(summary['duration']) or \
                                 math.isnan(summary["total_energy"])):
                 continue
@@ -382,4 +384,4 @@ if __name__ == "__main__":
     # root_path = Path("./")
     # save_reports(root_path, summary_store, err_cr, err_fl)
     
-    generate_reports_only(Path("/data/aiida_backup_17_12_25"), aiida=True, skip_errors=True)
+    generate_reports_only(Path("/root/projects/dft_organizer/dft_organizer/fleur_data_part"), aiida=True, skip_errors=True)

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple, Optional
 
-import psycopg2
+import pg8000 
 from aiida import load_profile
 from aiida.orm import load_node, StructureData
 
@@ -231,7 +231,7 @@ def main(uuid: str):
     print(f"Start node: {_node_short_info(start_pk)}, uuid={start_node.uuid}")
 
     db_cfg = load_db_config(PROFILE_NAME)
-    conn = psycopg2.connect(**db_cfg)
+    conn = pg8000.connect(**db_cfg)
 
     try:
         links = fetch_tree_from_db(conn, start_pk)
