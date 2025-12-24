@@ -1,10 +1,9 @@
 import os
 import shutil
-import pandas as pd
-
 from pathlib import Path
-import os
-import shutil
+from typing import Optional
+
+import polars as pl  
 
 from dft_organizer.core import scan_calculations, save_reports
 from dft_organizer.core import compress_with_7z, extract_7z
@@ -15,7 +14,8 @@ def archive_and_remove(
     root_dir: Path,
     make_report: bool = True,
     aiida: bool = False,
-):
+    skip_errors: bool = False
+) -> Optional[pl.DataFrame]:
     """
     Archive directory, create report and remove original files.
     """
@@ -33,6 +33,7 @@ def archive_and_remove(
             root_path,
             aiida=aiida,
             verbose=True,
+            skip_errors=skip_errors
         )
         save_reports(root_path, summary_store, error_dict_crystal, error_dict_fleur)
 
@@ -63,11 +64,10 @@ def archive_and_remove(
     else:
         print(f"Failed to archive root directory: {root_path}")
 
-    return pd.DataFrame(summary_store) if summary_store else None
-
+    return pl.DataFrame(summary_store) if summary_store else None
 
 def restore_archives_iterative(
-    start_path: Path, generate_reports: bool = True, aiida: bool = False
+    start_path: Path, generate_reports: bool = True, aiida: bool = False, skip_errors: bool = False
 ):
     """Iteratively restore archives level by level"""
     start_path = Path(start_path)
@@ -127,4 +127,4 @@ def restore_archives_iterative(
 
     # generate reports after all extraction is complete
     if generate_reports:
-        generate_reports_only(extracted_root, aiida)
+        generate_reports_only(extracted_root, aiida, skip_errors)

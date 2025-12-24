@@ -1,41 +1,144 @@
 import os
 from datetime import datetime
-
-from dft_organizer.aiida_utils import extract_uuid_from_path
-from dft_organizer.crystal_parser import make_report as make_report_crystal
-from dft_organizer.crystal_parser import print_report as print_report_crystal
-from dft_organizer.crystal_parser import save_report as save_report_crystal
-from dft_organizer.crystal_parser import parse_crystal_output
-from dft_organizer.fleur_parser import make_report as make_report_fleur
-from dft_organizer.fleur_parser import print_report as print_report_fleur
-from dft_organizer.fleur_parser import save_report as save_report_fleur
-from dft_organizer.fleur_parser import parse_fleur_output
-from dft_organizer.utils import detect_engine, get_table_string
-
 from pathlib import Path
 from typing import Any
+import math
 
-import pandas as pd
+import json
+import polars as pl
+
+from aiida import load_profile
+from aiida.orm import load_node, StructureData
+import pg8000
+import numpy as np
 
 from dft_organizer.aiida_utils import extract_uuid_from_path
 from dft_organizer.utils import detect_engine, get_table_string
 from dft_organizer.crystal_parser import (
     parse_crystal_output,
     make_report as make_report_crystal,
+    print_report as print_report_crystal,
+    save_report as save_report_crystal,
 )
 from dft_organizer.fleur_parser import (
     parse_fleur_output,
     make_report as make_report_fleur,
+    print_report as print_report_fleur,
+    save_report as save_report_fleur,
 )
+
+from dft_organizer.aiida.aiida_links_tree import (
+    load_db_config,
+    fetch_tree_from_db,
+    find_first_last_structure_uuids,
+)
+
+PROFILE_NAME = "presto_pg"
+
+
+def _get_structure_from_uuid(uuid: str) -> StructureData:
+    """Upload StructureData node by UUID"""
+    node = load_node(uuid)
+    if isinstance(node, StructureData):
+        return node
+    if hasattr(node, "outputs") and "structure" in node.outputs:
+        out = node.outputs["structure"]
+        if isinstance(out, StructureData):
+            return out
+    raise ValueError(f"Node {uuid} does not provide a StructureData")
+
+
+def structure_displacement_ase(atoms_init, atoms_final) -> dict:
+    pos_init = atoms_init.get_positions()
+    pos_final = atoms_final.get_positions()
+    if pos_init.shape != pos_final.shape:
+        raise ValueError("Initial and final structures have different sizes/order")
+    disp = pos_final - pos_init
+    sq = np.sum(disp**2, axis=1)
+    sum_sq = float(np.sum(sq))
+    rmsd = float(np.sqrt(np.mean(sq)))
+    return {"sum_sq_disp": sum_sq, "rmsd_disp": rmsd}
+
+
+def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
+    """
+    For each summary with engine='fleur' ​​and field 'uuid' (CalcJobNode FLEUR):
+    - Builds a tree around the CalcJob;
+    - Finds the first and last StructureData by pk;
+    - Calculates the coordinate offset between them;
+    - Adds to the summary:
+    'first_struct_uuid', 'last_struct_uuid',
+    'sum_sq_disp', 'rmsd_disp',
+    Modifies summary_store in-place.
+    """
+    load_profile(PROFILE_NAME)
+    db_cfg = load_db_config(PROFILE_NAME)
+    conn = pg8000.connect(**db_cfg)
+
+    try:
+        for summary in summary_store:
+            if summary.get("engine") != "fleur":
+                continue
+            calc_uuid = summary.get("uuid")
+            if not calc_uuid:
+                continue
+
+            summary["first_struct_uuid"] = None
+            summary["last_struct_uuid"] = None
+            summary["sum_sq_disp"] = None
+            summary["rmsd_disp"] = None
+
+            try:
+                calc = load_node(calc_uuid)
+            except Exception as e:
+                print(f"Cannot load CalcJobNode {calc_uuid}: {e}")
+                continue
+
+            start_pk = calc.pk
+
+            try:
+                links = fetch_tree_from_db(conn, start_pk)
+                first_s_uuid, last_s_uuid = find_first_last_structure_uuids(links)
+            except Exception as e:
+                print(f"Cannot build provenance tree for pk={start_pk}: {e}")
+                continue
+
+            if first_s_uuid is None or last_s_uuid is None:
+                continue
+
+            summary["first_struct_uuid"] = first_s_uuid
+            summary["last_struct_uuid"] = last_s_uuid
+
+            try:
+                first_struct = _get_structure_from_uuid(first_s_uuid)
+                last_struct = _get_structure_from_uuid(last_s_uuid)
+                ase_first = first_struct.get_ase()
+                ase_last = last_struct.get_ase()
+                disp = structure_displacement_ase(ase_first, ase_last)
+                summary["sum_sq_disp"] = round(disp["sum_sq_disp"], 2)
+                summary["rmsd_disp"]   = round(disp["rmsd_disp"], 2)
+            except Exception as e:
+                print(f"Cannot compute displacement for CalcJob {calc_uuid}: {e}")
+                continue
+
+    finally:
+        conn.close()
 
 
 def scan_calculations(
     root_dir: Path,
     aiida: bool = False,
     verbose: bool = True,
+    skip_errors: bool = False
 ) -> tuple[list[dict[str, Any]], dict, dict]:
     """
     Go through directory tree, parse outputs and generate error reports.
+    
+    Parameters:
+    - root_dir: Path to the root directory to scan.
+    - aiida: Whether to extract UUIDs based on AiiDA path structure.
+    - verbose: Whether to print summaries to stdout.
+    - skip_errors: Whether to skip entries with parsing errors in the summary.
     """
     root_path = Path(root_dir).resolve()
 
@@ -58,6 +161,8 @@ def scan_calculations(
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
+            if skip_errors and math.isnan(summary['duration']):
+                continue
             summary_store.append(summary)
             if verbose:
                 print("CRYSTAL OUTPUT FOUND:")
@@ -71,6 +176,11 @@ def scan_calculations(
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
+            if summary["total_energy"] is None:
+                summary["total_energy"] = float("nan")
+            if skip_errors and (math.isnan(summary['duration']) or \
+                                math.isnan(summary["total_energy"])):
+                continue
             summary_store.append(summary)
             if verbose:
                 print("FLEUR OUTPUT FOUND:")
@@ -85,6 +195,9 @@ def scan_calculations(
                 current_dir, filenames, error_dict_fleur
             )
 
+    if aiida and summary_store:
+        enrich_fleur_with_displacement(summary_store)
+
     return summary_store, error_dict_crystal, error_dict_fleur
 
 
@@ -95,7 +208,6 @@ def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
     if not root_path.exists():
         raise FileNotFoundError(f"Directory does not exist: {root_path}")
 
-    # extract parts from UUID: first 2 chars, next 2 chars, rest
     if len(uuid) < 4:
         raise ValueError(f"UUID too short: {uuid}")
 
@@ -111,7 +223,6 @@ def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
     for dirpath, dirnames, filenames in os.walk(root_path):
         current_dir = Path(dirpath)
         extracted_uuid = extract_uuid_from_path(current_dir, root_path)
-
         if extracted_uuid == uuid:
             return current_dir
 
@@ -126,12 +237,23 @@ def save_reports(
 ) -> None:
     time_now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
+    def _serialize_nested(v):
+        if v is None:
+            return ""
+        return json.dumps(v)
+
     if summary_store:
-        df = pd.DataFrame(summary_store)
-        df.to_csv(
-            root_path.parent / f"summary_{time_now}.csv",
-            index=False,
-        )
+        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols"]
+        flat_summary = []
+        for row in summary_store:
+            row = dict(row)
+            for k in nested_keys:
+                if k in row:
+                    row[k] = _serialize_nested(row[k])
+            flat_summary.append(row)
+
+        df = pl.DataFrame(flat_summary)
+        df.write_csv(root_path.parent / f"summary_{time_now}.csv")
 
     if error_dict_fleur:
         print_report_fleur(error_dict_fleur)
@@ -178,7 +300,6 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
 
         summary = None
 
-        # parse result file if exists
         if output_file.exists():
             summary = parse_output(output_file)
             summary["output_path"] = str(output_file)
@@ -209,11 +330,10 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
 
         if summary:
             summary_file = root_path.parent / f"summary_uuid_{uuid}_{timestamp}.csv"
-            df = pd.DataFrame([summary])
-            df.to_csv(summary_file, index=False)
+            df = pl.DataFrame([summary])
+            df.write_csv(summary_file)
             print(f"\nSummary saved to: {summary_file}")
 
-        # save error report
         error_report_file = root_path.parent / f"report_uuid_{uuid}_{timestamp}.txt"
         save_report(error_dict, str(error_report_file))
         print(f"Error report saved to: {error_report_file}")
@@ -226,19 +346,14 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
     except Exception as e:
         print(f"Unexpected error: {e}")
         import traceback
-
         traceback.print_exc()
         return None
 
 
-def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
+def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False) -> None:
     """
     Scan a calculation tree, print a short summary to stdout
     and save a summary CSV plus error reports.
-
-    Intended to be used after extraction, but can be called
-    on any directory with calculations. Does not perform any
-    archiving or directory removal.
     """
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
@@ -253,6 +368,7 @@ def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
         root_path,
         aiida=aiida,
         verbose=True,
+        skip_errors=skip_errors
     )
 
     save_reports(root_path, summary_store, err_cr, err_fl)
@@ -260,3 +376,12 @@ def generate_reports_only(root_dir: Path, aiida: bool = False) -> None:
     print("\n" + "=" * 60)
     print("REPORTS GENERATION COMPLETE")
     print("=" * 60 + "\n")
+
+
+if __name__ == "__main__":
+    
+    # summary_store, err_cr, err_fl = scan_calculations(Path("/data/aiida"), aiida=True, verbose=True)
+    # root_path = Path("./")
+    # save_reports(root_path, summary_store, err_cr, err_fl)
+    
+    generate_reports_only(Path("/root/projects/dft_organizer/dft_organizer/fleur_data_part"), aiida=True, skip_errors=True)

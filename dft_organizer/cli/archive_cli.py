@@ -23,9 +23,14 @@ def cli():
 @click.option(
     "--aiida/--no-aiida", default=False, help="AiiDA mode - extract UUID from path"
 )
-def archive(path, report, aiida):
+@click.option(
+    "--skip-errors/--no-skip-errors",
+    default=False,
+    help="Skip entries with errors in the report",
+)
+def archive(path, report, aiida, skip_errors):
     """Archive directory, create report and remove original files."""
-    archive_and_remove(Path(path), make_report=report, aiida=aiida)
+    archive_and_remove(Path(path), make_report=report, aiida=aiida, skip_errors=skip_errors)
 
 
 @cli.command()

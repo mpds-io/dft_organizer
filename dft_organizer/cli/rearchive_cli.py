@@ -22,9 +22,15 @@ from dft_organizer.core import restore_archives_iterative
     default=False,
     help="AiiDA mode - extract UUID from path",
 )
-def cli(path, report, aiida):
+@click.option(
+    "--skip-errors/--no-skip-errors",
+    default=False,
+    help="Skip entries with errors in the report",
+)
+
+def cli(path, report, aiida, skip_errors):
     """Unpack 7z archive or restore archives in a directory."""
-    restore_archives_iterative(Path(path), generate_reports=report, aiida=aiida)
+    restore_archives_iterative(Path(path), generate_reports=report, aiida=aiida, skip_errors=skip_errors)
 
 
 if __name__ == "__main__":
