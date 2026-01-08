@@ -11,7 +11,7 @@ def detect_calculation_code(filepath: Union[str, Path]) -> tuple[str, str]:
 
     try:
         with open(filepath, "rb") as f:
-            header = f.read(2048)  # first 2KB for detection
+            header = f.read(6000) 
     except Exception as e:
         return "unknown", f"Error: {e}"
 
