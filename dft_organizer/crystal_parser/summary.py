@@ -52,7 +52,6 @@ def _structure_displacement(structures: list) -> dict:
         "rmsd_disp": float(np.sqrt(np.mean(sq))),
     }
 
-
 def parse_crystal_output(path: Path) -> dict:
     try:
         co = CRYSTOUT(str(path))
@@ -67,11 +66,38 @@ def parse_crystal_output(path: Path) -> dict:
                 "sum_sq_disp": float("nan"),
                 "rmsd_disp": float("nan"),
                 "chemical_formula": "",
+                "techs_1_FMIXING": "",
+                "techs_2": "",
+                "tol_first": "",
+                "tol_last": "",
+                "k": float("nan"),
+                "H": "",
+                "smear": float("nan"),
+                "spin": float("nan"),
             },
             2,
         )
 
     results: dict = {}
+
+    # INPUT parameters from obj.info
+    # results["techs_0_TOLINTEG"] = content.get("techs", [""])[0]
+    results["techs_1_FMIXING"] = content.get("techs", ["", ""])[1]
+    results["techs_2"] = content.get("techs", ["", "", ""])
+    if len(results["techs_2"]) > 2:
+        if 'by' in results["techs_2"][2]:
+            results["techs_2"] = results["techs_2"][2]
+        else:
+            results["techs_2"] = ""
+    else:
+        results["techs_2"] = ""
+    # results["techs_3_smear"] = content.get("techs", ["", "", "", ""])[3] 
+    results["tol_first"] = content.get("tol", [""])[0]
+    results["tol_last"] = content.get("tol", [""])[-1]
+    results["k"] = content.get("k", [float("nan")])[0]
+    results["H"] = content.get("H", "")
+    results["smear"] = content.get("smear", float("nan"))
+    results["spin"] = float(content.get("spin", float("nan")))
 
     energy = content.get("energy", float("nan"))
     results["total_energy"] = float("nan") if energy is None else float(energy)
@@ -90,7 +116,7 @@ def parse_crystal_output(path: Path) -> dict:
             bandgap = float(bg)
     results["bandgap"] = bandgap
 
-    # last structure: cell -> cellpar
+    # last structure: cell > cellpar
     structs = content.get("structures", [])
     try:
         if structs:
