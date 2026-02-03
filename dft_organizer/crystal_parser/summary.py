@@ -5,6 +5,7 @@ from pycrystal import CRYSTOUT, CRYSTOUT_Error
 from ase.geometry import cell_to_cellpar
 
 from dft_organizer.ase_utils import get_formula
+import re
 
 
 def round_floats(obj, ndigits: int = 2):
@@ -68,12 +69,14 @@ def parse_crystal_output(path: Path) -> dict:
                 "chemical_formula": "",
                 "techs_1_FMIXING": "",
                 "techs_2": "",
-                "tol_first": "",
-                "tol_last": "",
+                "tolinteg"
+                "t1": "",
+                "t5": "",
                 "k": float("nan"),
                 "H": "",
                 "smear": float("nan"),
                 "spin": float("nan"),
+                "optgeom": float("nan"),
             },
             2,
         )
@@ -84,6 +87,10 @@ def parse_crystal_output(path: Path) -> dict:
     # results["techs_0_TOLINTEG"] = content.get("techs", [""])[0]
     results["techs_1_FMIXING"] = content.get("techs", ["", ""])[1]
     results["techs_2"] = content.get("techs", ["", "", ""])
+    
+    if "optgeom" in co.info.keys():
+        if co.info["optgeom"] != []:
+            results["optgeom"] = True
     if len(results["techs_2"]) > 2:
         if 'by' in results["techs_2"][2]:
             results["techs_2"] = results["techs_2"][2]
@@ -91,9 +98,17 @@ def parse_crystal_output(path: Path) -> dict:
             results["techs_2"] = ""
     else:
         results["techs_2"] = ""
+        
+    # input parms
+    input_params = ["MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK", "TOLINTEG"]
+    for p in input_params:
+        match = re.search(rf'{p}\n([^\n]+)', content['input'])
+        if match:
+            results[p] = match.group(1)
+
     # results["techs_3_smear"] = content.get("techs", ["", "", "", ""])[3] 
-    results["tol_first"] = content.get("tol", [""])[0]
-    results["tol_last"] = content.get("tol", [""])[-1]
+    results["t1"] = content.get("tol", [""])[0]
+    results["t5"] = content.get("tol", [""])[-1]
     results["k"] = content.get("k", [float("nan")])[0]
     results["H"] = content.get("H", "")
     results["smear"] = content.get("smear", float("nan"))

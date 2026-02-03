@@ -129,7 +129,8 @@ def scan_calculations(
     root_dir: Path,
     aiida: bool = False,
     verbose: bool = True,
-    skip_errors: bool = False
+    skip_errors: bool = False,
+    calculation_type: str = "structure_opt"
 ) -> tuple[list[dict[str, Any]], dict, dict]:
     """
     Go through directory tree, parse outputs and generate error reports.
@@ -156,6 +157,15 @@ def scan_calculations(
         if engine == "crystal" and "OUTPUT" in filenames:
             output_path = current_dir / "OUTPUT"
             summary = parse_crystal_output(output_path)
+            
+            if summary.get("optgeom") and calculation_type == "structure_opt":
+                if summary.get("optgeom") is True:
+                    pass
+                else:
+                    continue
+            elif calculation_type == "structure_opt":
+                continue
+                
             summary["output_path"] = str(output_path)
             summary["engine"] = "crystal"
             if aiida:
@@ -350,7 +360,7 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
         return None
 
 
-def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False) -> None:
+def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "structure_opt") -> None:
     """
     Scan a calculation tree, print a short summary to stdout
     and save a summary CSV plus error reports.
@@ -368,7 +378,8 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
         root_path,
         aiida=aiida,
         verbose=True,
-        skip_errors=skip_errors
+        skip_errors=skip_errors,
+        calculation_type=calculation_type
     )
 
     save_reports(root_path, summary_store, err_cr, err_fl)
