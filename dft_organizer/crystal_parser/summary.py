@@ -8,6 +8,28 @@ from dft_organizer.ase_utils import get_formula
 import re
 
 
+def count_optimization_cycles(filename):
+    """
+    Count the number of geometry optimization cycles in CRYSTAL output files.
+    Looks for lines containing "OPTIMIZATION - POINT N".
+    """
+    with open(filename, 'r') as f:
+        content = f.read()
+    
+    # Pattern matches "COORDINATE AND CELL OPTIMIZATION - POINT N" where N is a number
+    pattern = r'OPTIMIZATION - POINT\s+(\d+)'
+    matches = re.findall(pattern, content)
+    
+    if matches:
+        num_cycles = len(matches)
+        print(f"Number of geometry optimization cycles: {num_cycles}")
+        print(f"Found points: {', '.join(matches)}")
+        return num_cycles
+    else:
+        print("No optimization cycles found")
+        return 0
+
+
 def round_floats(obj, ndigits: int = 2):
     """Recursively round all numeric values in dict/list/tuple to ndigits."""
     if isinstance(obj, dict):
@@ -77,6 +99,7 @@ def parse_crystal_output(path: Path) -> dict:
                 "smear": float("nan"),
                 "spin": float("nan"),
                 "optgeom": float("nan"),
+                "num_opt_cycles": float("nan")
             },
             2,
         )
@@ -91,6 +114,12 @@ def parse_crystal_output(path: Path) -> dict:
     if "optgeom" in co.info.keys():
         if co.info["optgeom"] != []:
             results["optgeom"] = True
+        num_opt_cycles = count_optimization_cycles(str(path))
+        results["num_opt_cycles"] = num_opt_cycles
+    else:
+        results["optgeom"] = False
+        results["num_opt_cycles"] = 0
+        
     if len(results["techs_2"]) > 2:
         if 'by' in results["techs_2"][2]:
             results["techs_2"] = results["techs_2"][2]
