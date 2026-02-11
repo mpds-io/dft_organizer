@@ -57,9 +57,6 @@ def parse_fleur_out_xml(filename: Path) -> dict:
 
     results = {}
 
-    # total energy (eV)
-    results["total_energy"] = parsed_data.get("energy", float("nan"))
-
     # CPU time: walltime in sec -> in hours
     walltime_sec = parsed_data.get("walltime", float("nan"))
     results["duration"] = walltime_sec / 3600 if walltime_sec else float("nan")
@@ -117,12 +114,6 @@ def parse_fleur_output(filename: Path) -> dict:
 
     results = {}
     results.update(_nan_cellpar_results())
-
-    energy_match = re.search(r"total energy=\s*([-\d\.E+]+)", content)
-    if energy_match:
-        results["total_energy"] = float(energy_match.group(1))
-    else:
-        results["total_energy"] = float("nan")
 
     time_match = re.search(r"Total execution time:\s*(\d+)sec", content)
     results["duration"] = float(time_match.group(1)) / 3600 if time_match else float("nan")

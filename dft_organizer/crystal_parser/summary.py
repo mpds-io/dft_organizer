@@ -85,7 +85,6 @@ def parse_crystal_output(path: Path) -> dict:
             {
                 "bandgap": float("nan"),
                 "duration": float("nan"),
-                "total_energy": float("nan"),   # eV
                 "sum_sq_disp": float("nan"),
                 "rmsd_disp": float("nan"),
                 "chemical_formula": "",
@@ -143,8 +142,6 @@ def parse_crystal_output(path: Path) -> dict:
     results["smear"] = content.get("smear", float("nan"))
     results["spin"] = float(content.get("spin", float("nan")))
 
-    energy = content.get("energy", float("nan"))
-    results["total_energy"] = float("nan") if energy is None else float(energy)
     # duration
     try:
         results["duration"] = float(content.get("duration", float("nan")))
