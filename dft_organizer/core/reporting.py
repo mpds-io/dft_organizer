@@ -186,10 +186,7 @@ def scan_calculations(
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
-            if summary["total_energy"] is None:
-                summary["total_energy"] = float("nan")
-            if skip_errors and (math.isnan(summary['duration']) or \
-                                math.isnan(summary["total_energy"])):
+            if skip_errors and (math.isnan(summary['duration'])):
                 continue
             summary_store.append(summary)
             if verbose:
