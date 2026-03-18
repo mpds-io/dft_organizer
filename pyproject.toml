@@ -6,7 +6,7 @@ authors = [{ name = "Alina Zhidkovskaya", email = "alina@mpds.io" }]
 dependencies = [
     "click>=8.1",
     "pycrystal",
-    "ase-fleur @ git+https://github.com/blokhin/ase-fleur",
+    "ase-fleur @ git+https://github.com/JuDFTteam/ase-fleur",
 ]
 requires-python = ">=3.9"
 
