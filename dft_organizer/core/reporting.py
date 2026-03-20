@@ -171,7 +171,7 @@ def scan_calculations(
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
-            if skip_errors and math.isnan(summary.get('duration')):
+            if skip_errors and math.isnan(summary.get('duration', float('nan'))):
                 continue
             summary_store.append(summary)
             if verbose:
@@ -186,7 +186,7 @@ def scan_calculations(
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
-            if skip_errors and math.isnan(summary.get('duration')):
+            if skip_errors and math.isnan(summary.get('duration', float('nan'))):
                 continue
             summary_store.append(summary)
             if verbose:
