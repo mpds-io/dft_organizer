@@ -134,7 +134,7 @@ def scan_calculations(
 ) -> tuple[list[dict[str, Any]], dict, dict]:
     """
     Go through directory tree, parse outputs and generate error reports.
-    
+
     Parameters:
     - root_dir: Path to the root directory to scan.
     - aiida: Whether to extract UUIDs based on AiiDA path structure.
@@ -157,7 +157,7 @@ def scan_calculations(
         if engine == "crystal" and "OUTPUT" in filenames:
             output_path = current_dir / "OUTPUT"
             summary = parse_crystal_output(output_path)
-            
+
             if summary.get("optgeom") and calculation_type == "structure_opt":
                 if summary.get("optgeom") is True:
                     pass
@@ -165,9 +165,9 @@ def scan_calculations(
                     continue
             elif calculation_type == "structure_opt":
                 continue
-                
+
             summary["output_path"] = str(output_path)
-            summary["engine"] = "crystal"
+            summary["engine"] = engine
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
@@ -175,14 +175,14 @@ def scan_calculations(
                 continue
             summary_store.append(summary)
             if verbose:
-                print("CRYSTAL OUTPUT FOUND:")
+                print(f"{engine.upper()} OUTPUT FOUND IN {output_path}")
                 print(get_table_string(summary))
 
         elif engine == "fleur" and ("out" in filenames or "out.xml" in filenames):
             output_path = current_dir / ("out.xml" if "out.xml" in filenames else "out")
             summary = parse_fleur_output(output_path)
             summary["output_path"] = str(output_path)
-            summary["engine"] = "fleur"
+            summary["engine"] = engine
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
@@ -190,7 +190,7 @@ def scan_calculations(
                 continue
             summary_store.append(summary)
             if verbose:
-                print("FLEUR OUTPUT FOUND:")
+                print(f"{engine.upper()} OUTPUT FOUND IN {output_path}")
                 print(get_table_string(summary))
 
         if engine == "crystal":
@@ -387,9 +387,9 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
 
 
 if __name__ == "__main__":
-    
+
     # summary_store, err_cr, err_fl = scan_calculations(Path("/data/aiida"), aiida=True, verbose=True)
     # root_path = Path("./")
     # save_reports(root_path, summary_store, err_cr, err_fl)
-    
+
     generate_reports_only(Path("/root/projects/dft_organizer/dft_organizer/fleur_data_part"), aiida=True, skip_errors=True)

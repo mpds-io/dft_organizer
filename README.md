@@ -1,17 +1,11 @@
 # DFT organizer
 
-[Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030) and [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947)  
-Tilde Materials Informatics and Materials Platform for Data Science LLC
-
-
-## About
-
-`dft-organizer` is a command-line tool to manage data from density functional theory calculations using CRYSTAL and FLEUR engines.
+This is a command-line tool to manage the data from DFT (density functional theory) calculations using [CRYSTAL](https://www.crystal.unito.it) and [FLEUR](https://www.flapw.de) engines.
 
 It automates:
-- Archiving calculation directories with 7z compression
-- Parsing output files to generate detailed error reports and CSV summaries
-- Cleaning up original calculation directories after archiving
+- archiving calculation directories with 7z compression
+- parsing output files to generate detailed error reports and CSV summaries
+- cleaning up original calculation directories after archiving
 
 It also supports unpacking 7z archives and restoring archived calculation directories recursively, with optional AiiDA UUID tracking.
 
@@ -25,9 +19,7 @@ Dependencies:
 - polars
 - 7z (command-line tool)
 
-Install via pip:
-
-`pip install .`
+Install via pip: `pip install .`
 
 
 ## Command-line Interface
@@ -36,13 +28,12 @@ Install via pip:
 
 dft-pack --path <directory_path> [--report|--no-report] [--aiida|--no-aiida] [--skip-errors|--no-skip-errors]
 
-- `--path`         Path to the calculation directory  
-- `--report`       Generate error report and summary (default)  
-- `--no-report`    Skip report generation  
-- `--aiida`        Extract UUID from AiiDA directory structure  
-- `--no-aiida`     Do not extract UUID  
+- `--path`         Path to the calculation directory
+- `--report`       Generate error report and summary (default)
+- `--no-report`    Skip report generation
+- `--aiida`        Extract UUID from AiiDA directory structure
+- `--no-aiida`     Do not extract UUID
 - `--skip-errors`  Skip calculations with errors to create summary table
-
 
 Creates:
 
@@ -55,11 +46,11 @@ Creates:
 
 dft-unpack --path <archive_or_directory_path> [--report|--no-report] [--aiida|--no-aiida] [--skip-errors|--no-skip-errors]
 
-- `--path`         Path to a .7z archive or directory with archives  
-- `--report`       Generate summary and error reports after extraction (default)  
-- `--no-report`    Skip report generation  
-- `--aiida`        Extract UUID from AiiDA directory structure  
-- `--no-aiida`     Do not extract UUID  
+- `--path`         Path to a .7z archive or directory with archives
+- `--report`       Generate summary and error reports after extraction (default)
+- `--no-report`    Skip report generation
+- `--aiida`        Extract UUID from AiiDA directory structure
+- `--no-aiida`     Do not extract UUID
 - `--skip-errors`  Skip calculations with errors to create summary table
 
 Creates under parent directory:
@@ -71,22 +62,19 @@ Example:
 `dft-report --path /data/aiida_data --aiida --skip-errors`
 
 
-
 ### Generate reports without archiving
 
 dft-report --path <directory_path> [--aiida|--no-aiida] [--skip-errors|--no-skip-errors]
 
-- `--path`         Root directory containing calculations  
-- `--aiida`        Extract UUID from AiiDA directory structure  
-- `--no-aiida`     Do not extract UUID  
+- `--path`         Root directory containing calculations
+- `--aiida`        Extract UUID from AiiDA directory structure
+- `--no-aiida`     Do not extract UUID
 - `--skip-errors`  Skip calculations with errors to create summary table
 
 Creates under parent directory:
 - `summary_<timestamp>.csv`
 - `report_crystal_<timestamp>.txt`
 - `report_fleur_<timestamp>.txt`
-
-
 
 
 ## Python API
@@ -162,3 +150,10 @@ Output files:
 - `output_path`         Full path to the main OUTPUT file for this calculation.
 - `uuid`                Calculation UUID (only in AiiDA mode, extracted from directory layout).
 
+
+## License
+
+MIT
+
+&copy; [Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030) and [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947)
+Tilde Materials Informatics and Materials Platform for Data Science OÜ

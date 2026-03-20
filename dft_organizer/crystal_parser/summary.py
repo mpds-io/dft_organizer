@@ -1,12 +1,13 @@
 from pathlib import Path
 import math
+import re
+
 import numpy as np
 from pycrystal import CRYSTOUT, CRYSTOUT_Error
 from ase.geometry import cell_to_cellpar
 
 from dft_organizer.ase_utils import get_formula
 from dft_organizer.crystal_parser.parse_properties import parse_seebeck_first_line
-import re
 
 
 def count_optimization_cycles(filename):
@@ -16,11 +17,11 @@ def count_optimization_cycles(filename):
     """
     with open(filename, 'r') as f:
         content = f.read()
-    
+
     # Pattern matches "COORDINATE AND CELL OPTIMIZATION - POINT N" where N is a number
     pattern = r'OPTIMIZATION - POINT\s+(\d+)'
     matches = re.findall(pattern, content)
-    
+
     if matches:
         num_cycles = len(matches)
         print(f"Number of geometry optimization cycles: {num_cycles}")
@@ -109,10 +110,13 @@ def parse_crystal_output(path: Path) -> dict:
     results: dict = {}
 
     # INPUT parameters from obj.info
-    # results["techs_0_TOLINTEG"] = content.get("techs", [""])[0]
-    results["techs_1_FMIXING"] = content.get("techs", ["", ""])[1]
+    try:
+        # results["techs_0_TOLINTEG"] = content.get("techs", [""])[0]
+        results["techs_1_FMIXING"] = content.get("techs", ["", ""])[1]
+    except IndexError:
+        pass
     results["techs_2"] = content.get("techs", ["", "", ""])
-    
+
     if "optgeom" in co.info.keys():
         if co.info["optgeom"] != []:
             results["optgeom"] = True
@@ -121,7 +125,7 @@ def parse_crystal_output(path: Path) -> dict:
     else:
         results["optgeom"] = False
         results["num_opt_cycles"] = 0
-        
+
     if len(results["techs_2"]) > 2:
         if 'by' in results["techs_2"][2]:
             results["techs_2"] = results["techs_2"][2]
@@ -129,7 +133,7 @@ def parse_crystal_output(path: Path) -> dict:
             results["techs_2"] = ""
     else:
         results["techs_2"] = ""
-        
+
     # input parms
     input_params = ["MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK", "TOLINTEG"]
     for p in input_params:
@@ -137,20 +141,23 @@ def parse_crystal_output(path: Path) -> dict:
         if match:
             results[p] = match.group(1)
 
-    # results["techs_3_smear"] = content.get("techs", ["", "", "", ""])[3] 
-    results["t1"] = content.get("tol", [""])[0]
-    results["t5"] = content.get("tol", [""])[-1]
-    results["k"] = content.get("k", [float("nan")])[0]
-    results["H"] = content.get("H", "")
-    results["smear"] = content.get("smear", float("nan"))
-    results["spin"] = float(content.get("spin", float("nan")))
+    try:
+        # results["techs_3_smear"] = content.get("techs", ["", "", "", ""])[3]
+        results["t1"] = content.get("tol", [""])[0]
+        results["t5"] = content.get("tol", [""])[-1]
+        results["k"] = content.get("k", [float("nan")])[0]
+        results["H"] = content.get("H", "")
+        results["smear"] = content.get("smear", float("nan"))
+        results["spin"] = float(content.get("spin", float("nan")))
+    except TypeError:
+        pass
 
     # duration
     try:
         results["duration"] = float(content.get("duration", float("nan")))
     except Exception:
         results["duration"] = float("nan")
-        
+
     # seebeck
     seebeck_file = path.parent / "SEEBECK.DAT"
     if seebeck_file.exists():
