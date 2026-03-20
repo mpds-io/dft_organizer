@@ -22,6 +22,7 @@ def get_table_string(res: dict) -> str:
     lines.append("-" * 50)
 
     rows = [
+        ("System", res.get("chemical_formula")),
         ("Total Energy (eV)", fmt(res.get("total_energy"))),
         ("Duration (h)", fmt(res.get("duration"), prec=4)),
         ("Band Gap (eV)", fmt(res.get("bandgap"))),
