@@ -1,10 +1,11 @@
 [project]
 name = "dft-organizer"
-version = "0.1.0"
+version = "0.1.1"
 description = "DFT organizer with error parsing and archiving"
 authors = [{ name = "Alina Zhidkovskaya", email = "alina@mpds.io" }]
 dependencies = [
     "click>=8.1",
+    "polars",
     "pycrystal",
     "ase-fleur @ git+https://github.com/JuDFTteam/ase-fleur",
 ]
