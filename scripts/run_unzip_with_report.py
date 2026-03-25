@@ -2,7 +2,7 @@ from pathlib import Path
 from dft_organizer.core import restore_archives_iterative
 
 restore_archives_iterative(
-	Path("YOUR/ROOT/DIRECTORY/PATH/TO/7Z/ARCHIVES"),
+	Path("/root/projects/dft_organizer/examples/fleur_data/inputfiles.7z"),
 	generate_reports=True,
-	aiida=True
+	aiida=False
 )

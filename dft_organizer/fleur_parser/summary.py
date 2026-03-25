@@ -52,8 +52,18 @@ def parse_fleur_out_xml(filename: Path) -> dict:
     try:
         parsed_data = outxml_parser(filename)
     except Exception as e:
+        results = {"duration": float("nan"), 
+                "bandgap": float("nan"),                 
+                "a": float("nan"),
+                "b": float("nan"),
+                "c": float("nan"),
+                "alpha": float("nan"),
+                "beta": float("nan"),
+                "gamma": float("nan"),
+                "chemical_formula": float("nan")
+                }
         print(f"Error parsing file {filename}: {e}")
-        return {}
+        return results
 
     results = {}
 

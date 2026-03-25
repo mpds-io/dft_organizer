@@ -250,17 +250,25 @@ def save_reports(
         return json.dumps(v)
 
     if summary_store:
-        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols"]
+        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols", "bandgap"]
         flat_summary = []
-        for row in summary_store:
-            row = dict(row)
-            for k in nested_keys:
-                if k in row:
-                    row[k] = _serialize_nested(row[k])
-            flat_summary.append(row)
 
-        df = pl.DataFrame(flat_summary)
-        df.write_csv(root_path.parent / f"summary_{time_now}.csv")
+        for row in summary_store:
+            try:
+                row = dict(row)
+                for k in nested_keys:
+                    if k in row:
+                        try:
+                            row[k] = _serialize_nested(row[k])
+                        except Exception:
+                            row[k] = None
+                flat_summary.append(row)
+            except Exception:
+                continue
+
+        if flat_summary:
+            df = pl.DataFrame(flat_summary)
+            df.write_csv(root_path.parent / f"summary_{time_now}.csv")
 
     if error_dict_fleur:
         print_report_fleur(error_dict_fleur)
