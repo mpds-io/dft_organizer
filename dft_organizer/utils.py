@@ -20,9 +20,15 @@ def get_table_string(res: dict) -> str:
     lines = []
     lines.append(f"{'Parameter':<25} {'Value':<20}")
     lines.append("-" * 50)
+    
+    # avoide 'nan' 
+    if not(isinstance(res.get("chemical_formula", "N/A"), str)):
+        system = "N/A"
+    else:
+        system = res.get("chemical_formula", "N/A")
 
     rows = [
-        ("System", res.get("chemical_formula", "N/A")),
+        ("System", system),
         ("Total Energy (eV)", fmt(res.get("total_energy", "N/A"))),
         ("Duration (h)", fmt(res.get("duration", "N/A"), prec=4)),
         ("Band Gap (eV)", fmt(res.get("bandgap", "N/A"))),
