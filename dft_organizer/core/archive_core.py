@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 from pathlib import Path
@@ -9,6 +10,10 @@ from dft_organizer.core import scan_calculations, save_reports
 from dft_organizer.core import compress_with_7z, extract_7z
 from dft_organizer.core import generate_reports_only
 
+def _serialize_nested(v):
+    if v is None:
+        return ""
+    return json.dumps(v)
 
 def archive_and_remove(
     root_dir: Path,
@@ -64,7 +69,30 @@ def archive_and_remove(
     else:
         print(f"Failed to archive root directory: {root_path}")
 
-    return pl.DataFrame(summary_store) if summary_store else None
+     # safe df creation
+    if summary_store:
+        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols"]
+        flat_summary = []
+        for row in summary_store:
+            try:
+                row = dict(row)
+                for k in nested_keys:
+                    if k in row:
+                        try:
+                            row[k] = _serialize_nested(row[k])
+                        except Exception:
+                            row[k] = None
+                flat_summary.append(row)
+            except Exception:
+                continue
+
+        if flat_summary:
+            try:
+                return pl.DataFrame(flat_summary)
+            except Exception:
+                return None
+            
+    return None
 
 def restore_archives_iterative(
     start_path: Path, generate_reports: bool = True, aiida: bool = False, skip_errors: bool = False
