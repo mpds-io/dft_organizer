@@ -1,51 +1,36 @@
-import subprocess
-from distutils import spawn
 from pathlib import Path
-
-
-if spawn.find_executable("7z") is None:
-    raise OSError("7z archiver is not found in the system")
+import py7zr
 
 
 def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
-    """Compress directory using 7z without storing parent paths"""
+    """Compress directory using py7zr without storing parent paths"""
     try:
-        cmd = [
-            "7z",
-            "a",
-            "-t7z",
-            "-mx=9",
-            "-m0=LZMA2",
-            "-mmt=on",
-            "-spf",
-            str(archive_path),
-            source_dir.name,
-        ]
-
         print(f"Archiving {source_dir} to {archive_path}...")
-        _ = subprocess.run(
-            cmd, check=True, capture_output=True, text=True, cwd=str(source_dir.parent)
-        )
+
+        with py7zr.SevenZipFile(archive_path, 'w', filters=[
+            {"id": py7zr.FILTER_LZMA2, "preset": 9}
+        ]) as archive:
+            for path in source_dir.rglob("*"):
+                archive.write(
+                    path,
+                    arcname=path.relative_to(source_dir.parent)
+                )
+
         return True
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         print(f"Error archiving {source_dir}: {e}")
-        print(f"Output: {e.stderr if hasattr(e, 'stderr') else ''}")
         return False
 
 
 def extract_7z(archive_path: Path, target_dir: Path) -> bool:
     """Unpack 7z archive to target dir"""
     try:
-        cmd = [
-            "7z",
-            "x",
-            f"-o{target_dir}",
-            "-y",
-            str(archive_path),
-        ]
         print(f"Extracting {archive_path}...")
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+        with py7zr.SevenZipFile(archive_path, 'r') as archive:
+            archive.extractall(path=target_dir)
+
         return True
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         print(f"Error extracting {archive_path}: {e}")
         return False
