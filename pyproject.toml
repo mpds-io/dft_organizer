@@ -6,6 +6,7 @@ authors = [{ name = "Alina Zhidkovskaya", email = "alina@mpds.io" }]
 dependencies = [
     "click>=8.1",
     "polars",
+    "py7zr",
     "pycrystal",
     "ase-fleur @ git+https://github.com/JuDFTteam/ase-fleur",
 ]
