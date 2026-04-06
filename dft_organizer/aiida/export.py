@@ -46,7 +46,6 @@ def get_files(calc_label, uuid, root_folder):
     calc = load_node(uuid)
     repo_folder = calc.outputs.retrieved
 
-    # Определяем тип расчета по лейблу
     label_lower = calc_label.lower()
     if 'band' in label_lower or 'doss' in label_lower or 'fort.25' in label_lower:
         calc_type = CalcLabel.ELECTRON
