@@ -1,7 +1,7 @@
 [project]
 name = "dft-organizer"
-version = "0.1.1"
-description = "DFT organizer with error parsing and archiving"
+version = "0.1.2"
+description = "DFT materials data organizer with error parsing and archiving"
 authors = [{ name = "Alina Zhidkovskaya", email = "alina@mpds.io" }]
 dependencies = [
     "click>=8.1",
