@@ -4,11 +4,12 @@ from enum import StrEnum, unique
 
 from aiida.orm import load_node, QueryBuilder, CalcJobNode
 from aiida_crystal_dft.io.d12 import D12
-from aiida import load_profile
+from aiida import load_profile as load_aiida_profile
 
-load_profile()
+load_aiida_profile()
 
 from dft_organizer.core import compress_with_7z, extract_7z
+
 
 @unique
 class CalcLabel(StrEnum):
@@ -40,7 +41,7 @@ def calculations_for_label(label: str):
 
 def get_files(calc_label, uuid, root_folder):
     """
-    Copies relevant files from AiiDA repository for calculation 
+    Copies relevant files from AiiDA repository for calculation
     with given uuid to a structured folder in root_folder.
     """
     calc = load_node(uuid)
@@ -93,7 +94,7 @@ def get_files(calc_label, uuid, root_folder):
 
     print(f"Files for '{calc_label}' (uuid={uuid}) copied to {dst_folder}")
     print(f"Available files in repo_folder: {output_files_in_repo}")
-    
+
 def launch_aiida_export(label: str = 'ZnSe/216', root_folder: str = 'examples/aiida_test_files', calc_folder_name: str = 'externalArchive', archive_name: str = 'calc.7z'):
     """
     Collects files from AiiDA calculations, distributes them by type into subfolders, and archives them.

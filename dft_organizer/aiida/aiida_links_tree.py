@@ -5,12 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple, Optional
 
-import pg8000 
-from aiida import load_profile
+import pg8000
+from aiida import load_profile as load_aiida_profile
 from aiida.orm import load_node, StructureData
 
 
-PROFILE_NAME = "presto_pg"
 CONFIG_PATH = Path("~/.aiida/config.json").expanduser()
 
 
@@ -25,13 +24,13 @@ class LinkRecord:
     path: str
 
 
-def load_db_config(profile: str) -> dict:
+def load_db_config() -> dict:
     cfg = json.loads(CONFIG_PATH.read_text())
-    pconf = cfg["profiles"][profile]["storage"]["config"]
+    pconf = cfg["profiles"][cfg["default_profile"]]["storage"]["config"]
     return {
         "host": pconf["database_hostname"],
         "port": pconf["database_port"],
-        "database": pconf["database_name"],  
+        "database": pconf["database_name"],
         "user": pconf["database_username"],
         "password": pconf["database_password"],
     }
@@ -67,7 +66,7 @@ def fetch_tree_from_db(conn, start_pk: int) -> List[LinkRecord]:
     JOIN db_dbnode AS n_out ON n_out.id = p.output_id
     ORDER BY p.depth, p.output_id ASC;
     """
-    cur.execute(sql_down, (start_pk,))  
+    cur.execute(sql_down, (start_pk,))
     for input_id, output_id, depth, path, in_uuid, out_uuid in cur.fetchall():
         records.append(
             LinkRecord(
@@ -144,7 +143,7 @@ def find_first_last_pks(conn, start_pk: int) -> Tuple[int, int]:
     ORDER BY depth DESC
     LIMIT 1;
     """
-    cur.execute(sql_up, (start_pk,))  
+    cur.execute(sql_up, (start_pk,))
     row = cur.fetchone()
     first_pk = row[0] if row else start_pk
 
@@ -164,7 +163,7 @@ def find_first_last_pks(conn, start_pk: int) -> Tuple[int, int]:
     ORDER BY depth DESC
     LIMIT 1;
     """
-    cur.execute(sql_down, (start_pk,))  
+    cur.execute(sql_down, (start_pk,))
     row = cur.fetchone()
     last_pk = row[0] if row else start_pk
 
@@ -225,12 +224,12 @@ def find_first_last_structure_uuids(links: List[LinkRecord]) -> Tuple[Optional[s
 
 
 def main(uuid: str):
-    load_profile(PROFILE_NAME)
+    load_aiida_profile()
     start_node = load_node(uuid)
     start_pk = start_node.pk
     print(f"Start node: {_node_short_info(start_pk)}, uuid={start_node.uuid}")
 
-    db_cfg = load_db_config(PROFILE_NAME)
+    db_cfg = load_db_config()
     conn = pg8000.connect(**db_cfg)
 
     try:

@@ -7,7 +7,7 @@ import math
 import json
 import polars as pl
 
-from aiida import load_profile
+from aiida import load_profile as load_aiida_profile
 from aiida.orm import load_node, StructureData
 import pg8000
 import numpy as np
@@ -26,14 +26,11 @@ from dft_organizer.fleur_parser import (
     print_report as print_report_fleur,
     save_report as save_report_fleur,
 )
-
 from dft_organizer.aiida.aiida_links_tree import (
     load_db_config,
     fetch_tree_from_db,
     find_first_last_structure_uuids,
 )
-
-PROFILE_NAME = "presto_pg"
 
 
 def _get_structure_from_uuid(uuid: str) -> StructureData:
@@ -71,8 +68,8 @@ def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
     'sum_sq_disp', 'rmsd_disp',
     Modifies summary_store in-place.
     """
-    load_profile(PROFILE_NAME)
-    db_cfg = load_db_config(PROFILE_NAME)
+    load_aiida_profile()
+    db_cfg = load_db_config()
     conn = pg8000.connect(**db_cfg)
 
     try:
