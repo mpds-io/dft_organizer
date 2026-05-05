@@ -11,6 +11,7 @@ dependencies = [
     "py7zr",
     "pycrystal",
     "pg8000",
+    "aiida-crystal-dft @ git+https://github.com/tilde-lab/aiida-crystal-dft",
     "ase-fleur @ git+https://github.com/JuDFTteam/ase-fleur",
 ]
 requires-python = ">=3.9"

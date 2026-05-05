@@ -43,22 +43,6 @@ def archive_and_save(
         )
         save_reports(root_path, summary_store, error_dict_crystal, error_dict_fleur)
 
-    dirs_to_process: list[Path] = []
-    for dirpath, dirnames, filenames in os.walk(root_path, topdown=False):
-        current_dir = Path(dirpath)
-        if current_dir == root_path:
-            continue
-        dirs_to_process.append(current_dir)
-
-    for current_dir in dirs_to_process:
-        if not any(current_dir.iterdir()):
-            print(f"Skipping empty directory: {current_dir}")
-            continue
-
-        archive_path = current_dir.parent / f"{current_dir.name}.7z"
-        if not compress_with_7z(current_dir, archive_path):
-            print(f"Failed to archive: {current_dir}")
-
     root_archive_path = root_path.parent / f"{root_path.name}.7z"
     if compress_with_7z(root_path, root_archive_path):
         print(f"Done! Archive created: {root_archive_path}")

@@ -12,12 +12,7 @@ It also supports unpacking 7z archives and restoring archived calculation direct
 
 ## Installation
 
-Requires Python ≥ 3.9
-
-Dependencies:
-- click ≥ 8.1
-- polars
-- 7z (command-line tool)
+Requires Python ≥ 3.9 and `7z` command-line tool.
 
 Install via pip: `pip install .`
 
