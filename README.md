@@ -12,7 +12,7 @@ It also supports unpacking 7z archives and restoring archived calculation direct
 
 ## Installation
 
-Requires Python ≥ 3.11
+Requires Python ≥ 3.9
 
 Dependencies:
 - click ≥ 8.1
@@ -24,7 +24,7 @@ Install via pip: `pip install .`
 
 ## Command-line Interface
 
-### Archive a directory and generate report
+### Archive a directory and generate a report
 
 dft-pack --path <directory_path> [--report|--no-report] [--aiida|--no-aiida] [--skip-errors|--no-skip-errors]
 
@@ -83,9 +83,9 @@ Creates under parent directory:
 
 ```
 from pathlib import Path
-from dft_organizer.core import archive_and_remove
+from dft_organizer.core import archive_and_save
 
-archive_and_remove(
+archive_and_save(
 	Path("./my_calc_dir"),
 	engine="crystal",
 	make_report=True,
@@ -155,5 +155,4 @@ Output files:
 
 MIT
 
-&copy; [Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030) and [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947)
-Tilde Materials Informatics and Materials Platform for Data Science OÜ
+&copy; [Alina Zhidkovskaya](https://orcid.org/0009-0003-9305-0030) and [Evgeny Blokhin](https://orcid.org/0000-0002-5333-3947), Materials Platform for Data Science OÜ

@@ -117,7 +117,6 @@ def launch_aiida_export(label: str = 'ZnSe/216', root_folder: str = 'examples/ai
     for label, uuid in calcs.items():
         get_files(label, uuid, external_folder)
 
-    # archive (not removing original files, as they are in a separate folder)
     compress_with_7z(external_folder, Path(root_folder) / archive_name)
 
 if __name__ == "__main__":

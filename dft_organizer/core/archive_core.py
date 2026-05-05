@@ -1,28 +1,29 @@
 import json
 import os
-import shutil
 from pathlib import Path
 from typing import Optional
 
-import polars as pl  
+import polars as pl
 
 from dft_organizer.core import scan_calculations, save_reports
 from dft_organizer.core import compress_with_7z, extract_7z
 from dft_organizer.core import generate_reports_only
+
 
 def _serialize_nested(v):
     if v is None:
         return ""
     return json.dumps(v)
 
-def archive_and_remove(
+
+def archive_and_save(
     root_dir: Path,
     make_report: bool = True,
     aiida: bool = False,
     skip_errors: bool = False
 ) -> Optional[pl.DataFrame]:
     """
-    Archive directory, create report and remove original files.
+    Archive directory, create report
     """
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
@@ -55,16 +56,11 @@ def archive_and_remove(
             continue
 
         archive_path = current_dir.parent / f"{current_dir.name}.7z"
-        if compress_with_7z(current_dir, archive_path):
-            print(f"Removing original directory: {current_dir}")
-            shutil.rmtree(current_dir)
-        else:
+        if not compress_with_7z(current_dir, archive_path):
             print(f"Failed to archive: {current_dir}")
 
     root_archive_path = root_path.parent / f"{root_path.name}.7z"
     if compress_with_7z(root_path, root_archive_path):
-        print(f"Removing root directory: {root_path}")
-        shutil.rmtree(root_path)
         print(f"Done! Archive created: {root_archive_path}")
     else:
         print(f"Failed to archive root directory: {root_path}")
@@ -91,8 +87,9 @@ def archive_and_remove(
                 return pl.DataFrame(flat_summary)
             except Exception:
                 return None
-            
+
     return None
+
 
 def restore_archives_iterative(
     start_path: Path, generate_reports: bool = True, aiida: bool = False, skip_errors: bool = False

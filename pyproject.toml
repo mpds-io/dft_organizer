@@ -1,16 +1,35 @@
 [project]
 name = "dft-organizer"
-version = "0.1.2"
+version = "0.1.3"
 description = "DFT materials data organizer with error parsing and archiving"
-authors = [{ name = "Alina Zhidkovskaya", email = "alina@mpds.io" }]
+authors = [
+    { name = "Alina Zhidkovskaya", email = "alina@mpds.io" }
+]
 dependencies = [
     "click>=8.1",
     "polars",
     "py7zr",
     "pycrystal",
+    "pg8000",
     "ase-fleur @ git+https://github.com/JuDFTteam/ase-fleur",
 ]
 requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AiiDA",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Information Analysis"
+]
 
 [project.scripts]
 dft-pack   = "dft_organizer.cli.archive_cli:cli"

@@ -18,10 +18,11 @@ def get_table_string(res: dict) -> str:
         return str(val)
 
     lines = []
+    lines.append("-" * 50)
     lines.append(f"{'Parameter':<25} {'Value':<20}")
     lines.append("-" * 50)
-    
-    # avoide 'nan' 
+
+    # avoide 'nan'
     if not(isinstance(res.get("chemical_formula", "N/A"), str)):
         system = "N/A"
     else:

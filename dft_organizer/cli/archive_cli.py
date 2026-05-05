@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 
-from dft_organizer.core import archive_and_remove
+from dft_organizer.core import archive_and_save
 from dft_organizer.core import generate_report_for_uuid
 
 
@@ -29,8 +29,8 @@ def cli():
     help="Skip entries with errors in the report",
 )
 def archive(path, report, aiida, skip_errors):
-    """Archive directory, create report and remove original files."""
-    archive_and_remove(Path(path), make_report=report, aiida=aiida, skip_errors=skip_errors)
+    """Archive directory, create report"""
+    archive_and_save(Path(path), make_report=report, aiida=aiida, skip_errors=skip_errors)
 
 
 @cli.command()
