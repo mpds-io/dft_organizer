@@ -16,6 +16,7 @@ from dft_organizer.aiida_utils import extract_uuid_from_path
 from dft_organizer.utils import detect_engine, get_table_string
 from dft_organizer.crystal_parser import (
     parse_crystal_output,
+    is_properties_output,
     make_report as make_report_crystal,
     print_report as print_report_crystal,
     save_report as save_report_crystal,
@@ -163,10 +164,16 @@ def scan_calculations(
                 continue
             if "OUTPUT_prop" in filenames:
                 output_path = current_dir / "OUTPUT_prop"
-                calc_type = "properties"
             else:
                 output_path = current_dir / "OUTPUT"
+
+            if is_properties_output(output_path):
+                calc_type = "properties"
+            elif "OUTPUT_prop" in filenames:
+                calc_type = "properties"
+            else:
                 calc_type = "scf"
+
             summary = parse_crystal_output(output_path)
 
             if calc_type == "scf" and summary.get("optgeom") is True:

@@ -98,6 +98,25 @@ _PERIODIC_TABLE = {
 }
 
 
+def is_properties_output(path: Path) -> bool:
+    """Check if a CRYSTAL output file contains only PROPERTIES calculation
+    (without the preceding CRYSTAL SCF section)."""
+    try:
+        with open(path, "r") as f:
+            content = f.read()
+    except Exception:
+        return False
+
+    has_properties_marker = (
+        "CRYSTAL - PROPERTIES" in content
+        or "RESTART WITH NEW K POINTS NET" in content
+    )
+    has_scf_marker = "SCF ENDED" in content or (
+        "TOTAL ENERGY" in content and "CONVERGENCE ON ENERGY" in content
+    )
+    return has_properties_marker and not has_scf_marker
+
+
 def _parse_properties_only(path: Path) -> dict:
     results: dict = {
         "bandgap": float("nan"),
