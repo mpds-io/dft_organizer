@@ -127,7 +127,8 @@ def scan_calculations(
     aiida: bool = False,
     verbose: bool = True,
     skip_errors: bool = False,
-    calculation_type: str = "structure_opt"
+    calculation_type: str = "all",
+    engine_type: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict, dict]:
     """
     Go through directory tree, parse outputs and generate error reports.
@@ -137,8 +138,14 @@ def scan_calculations(
     - aiida: Whether to extract UUIDs based on AiiDA path structure.
     - verbose: Whether to print summaries to stdout.
     - skip_errors: Whether to skip entries with parsing errors in the summary.
+    - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
+    - engine_type: Filter by engine: None (all), "crystal", or "fleur".
     """
     root_path = Path(root_dir).resolve()
+
+    valid_engines = {"crystal", "fleur"}
+    if engine_type is not None and engine_type not in valid_engines:
+        raise ValueError(f"engine_type must be one of {valid_engines} or None, got: {engine_type!r}")
 
     summary_store: list[dict[str, Any]] = []
     error_dict_crystal: dict = {}
@@ -151,20 +158,26 @@ def scan_calculations(
 
         engine = detect_engine(filenames, current_dir)
 
-        if engine == "crystal" and "OUTPUT" in filenames:
-            output_path = current_dir / "OUTPUT"
+        if engine == "crystal" and ("OUTPUT" in filenames or "OUTPUT_prop" in filenames):
+            if engine_type and engine_type != "crystal":
+                continue
+            if "OUTPUT_prop" in filenames:
+                output_path = current_dir / "OUTPUT_prop"
+                calc_type = "properties"
+            else:
+                output_path = current_dir / "OUTPUT"
+                calc_type = "scf"
             summary = parse_crystal_output(output_path)
 
-            if summary.get("optgeom") and calculation_type == "structure_opt":
-                if summary.get("optgeom") is True:
-                    pass
-                else:
-                    continue
-            elif calculation_type == "structure_opt":
+            if calc_type == "scf" and summary.get("optgeom") is True:
+                calc_type = "optimise"
+
+            if calculation_type != "all" and calc_type != calculation_type:
                 continue
 
             summary["output_path"] = str(output_path)
             summary["engine"] = engine
+            summary["calc_type"] = calc_type
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
@@ -176,10 +189,14 @@ def scan_calculations(
                 print(get_table_string(summary))
 
         elif engine == "fleur" and ("out" in filenames or "out.xml" in filenames):
+            if engine_type and engine_type != "fleur":
+                continue
             output_path = current_dir / ("out.xml" if "out.xml" in filenames else "out")
             summary = parse_fleur_output(output_path)
             summary["output_path"] = str(output_path)
             summary["engine"] = engine
+            summary["calc_type"] = "optimise" if isinstance(summary, dict) and summary.get("fleur_modes", {}).get("relax", False) else "scf"
+            summary.pop("fleur_modes", None)
             if aiida:
                 uuid = extract_uuid_from_path(output_path, root_path)
                 summary["uuid"] = uuid
@@ -238,8 +255,12 @@ def save_reports(
     summary_store: list[dict],
     error_dict_crystal: dict,
     error_dict_fleur: dict,
+    output_dir: Path | None = None,
 ) -> None:
     time_now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    save_dir = Path(output_dir) if output_dir else root_path.parent
+    save_dir = save_dir.resolve()
+    save_dir.mkdir(parents=True, exist_ok=True)
 
     def _serialize_nested(v):
         if v is None:
@@ -265,20 +286,20 @@ def save_reports(
 
         if flat_summary:
             df = pl.DataFrame(flat_summary)
-            df.write_csv(root_path.parent / f"summary_{time_now}.csv")
+            df.write_csv(save_dir / f"summary_{time_now}.csv")
 
     if error_dict_fleur:
         print_report_fleur(error_dict_fleur)
         save_report_fleur(
             error_dict_fleur,
-            root_path.parent / f"report_fleur_{time_now}.txt",
+            save_dir / f"report_fleur_{time_now}.txt",
         )
 
     if error_dict_crystal:
         print_report_crystal(error_dict_crystal)
         save_report_crystal(
             error_dict_crystal,
-            root_path.parent / f"report_crystal_{time_now}.txt",
+            save_dir / f"report_crystal_{time_now}.txt",
         )
 
 
@@ -362,15 +383,22 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
         return None
 
 
-def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "structure_opt") -> None:
+def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "all", output_dir: Path | None = None, engine_type: str | None = None) -> None:
     """
     Scan a calculation tree, print a short summary to stdout
     and save a summary CSV plus error reports.
+
+    Parameters:
+    - output_dir: Directory to save CSV and reports. Defaults to /tmp/.
+    - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
+    - engine_type: Filter by engine: None (all), "crystal", or "fleur".
     """
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
         print(f"Directory does not exist: {root_path}")
         return
+
+    save_dir = Path(output_dir) if output_dir else Path("/tmp")
 
     print("\n" + "=" * 60)
     print("GENERATING REPORTS FOR ALL CALCULATIONS")
@@ -381,10 +409,11 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
         aiida=aiida,
         verbose=True,
         skip_errors=skip_errors,
-        calculation_type=calculation_type
+        calculation_type=calculation_type,
+        engine_type=engine_type,
     )
 
-    save_reports(root_path, summary_store, err_cr, err_fl)
+    save_reports(root_path, summary_store, err_cr, err_fl, output_dir=save_dir)
 
     print("\n" + "=" * 60)
     print("REPORTS GENERATION COMPLETE")
