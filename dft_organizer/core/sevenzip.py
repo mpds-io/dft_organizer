@@ -11,10 +11,11 @@ def compress_with_7z(source_dir: Path, archive_path: Path) -> bool:
             {"id": py7zr.FILTER_LZMA2, "preset": 9}
         ]) as archive:
             for path in source_dir.rglob("*"):
-                archive.write(
-                    path,
-                    arcname=path.relative_to(source_dir.parent)
-                )
+                if path.is_file():
+                    archive.write(
+                        path,
+                        arcname=path.relative_to(source_dir)
+                    )
 
         return True
     except Exception as e:
