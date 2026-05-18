@@ -47,10 +47,12 @@ def detect_engine(filenames: list, current_dir) -> dict:
     for file in filenames:
         fmt, _ = detect_calculation_code(current_dir / file)
         fmt_map[file] = fmt
-    if "OUTPUT" in fmt_map and "crystal" in fmt_map.values():
+    if ("OUTPUT" in fmt_map or "OUTPUT_prop" in fmt_map) and "crystal" in fmt_map.values():
         return "crystal"
-    elif "out" in fmt_map or "out.xml" in fmt_map and "fleur" in fmt_map.values():
+    elif ("out" in fmt_map or "out.xml" in fmt_map) and "fleur" in fmt_map.values():
         return "fleur"
+    elif "OUTPUT_prop" in filenames and "crystal" in fmt_map.values():
+        return "crystal"
     else:
         return "unknown"
 

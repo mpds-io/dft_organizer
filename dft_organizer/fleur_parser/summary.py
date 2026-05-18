@@ -73,6 +73,8 @@ def parse_fleur_out_xml(filename: Path) -> dict:
 
     results["bandgap"] = parsed_data.get("bandgap", float("nan"))
 
+    results["fleur_modes"] = parsed_data.get("fleur_modes", {})
+
     # structure -> cellpar columns
     try:
         ase_obj = read(filename, format="fleur-outxml")

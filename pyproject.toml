@@ -35,8 +35,13 @@ classifiers = [
 [project.scripts]
 dft-pack   = "dft_organizer.cli.archive_cli:cli"
 dft-export-aiida = "dft_organizer.cli.archive_aiida_based_cli:cli"
+dft-extract = "dft_organizer.cli.extract_archives_cli:cli"
 dft-unpack = "dft_organizer.cli.rearchive_cli:cli"
 dft-report = "dft_organizer.cli.report_cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["dft_organizer*"]
+exclude = ["export_20260517*", "openspec*"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
