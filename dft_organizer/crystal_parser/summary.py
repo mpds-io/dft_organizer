@@ -192,7 +192,21 @@ def _parse_properties_only(path: Path) -> dict:
             from math import gcd as math_gcd
             from functools import reduce
             from dft_organizer.ase_utils import FORMULA_SEQUENCE
-            counts = Counter(symbols)
+            _ELEM_SET = set(FORMULA_SEQUENCE)
+            normalized = []
+            for s in symbols:
+                if s in _ELEM_SET:
+                    normalized.append(s)
+                else:
+                    matched = False
+                    for el in _ELEM_SET:
+                        if el.upper() == s.upper() and len(el) == len(s):
+                            normalized.append(el)
+                            matched = True
+                            break
+                    if not matched:
+                        normalized.append(s)
+            counts = Counter(normalized)
             g = reduce(math_gcd, counts.values()) if len(counts) > 1 else list(counts.values())[0]
             ordered = [x for x in FORMULA_SEQUENCE if x in counts] + [
                 x for x in counts if x not in FORMULA_SEQUENCE
