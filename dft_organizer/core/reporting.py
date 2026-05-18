@@ -58,6 +58,109 @@ def structure_displacement_ase(atoms_init, atoms_final) -> dict:
     return {"sum_sq_disp": sum_sq, "rmsd_disp": rmsd}
 
 
+_HETZNER_CCX_RATES: dict[str, float] = {
+    "ccx13": 0.0256,
+    "ccx23": 0.0505,
+    "ccx33": 0.1001,
+    "ccx43": 0.2003,
+    "ccx51": 0.4006,
+    "ccx53": 0.4006,
+    "ccx63": 0.6001,
+}
+_DEFAULT_HETZNER_RATE: float = 0.4006  # CCX53
+
+
+def _get_hetzner_rate(computer_name: str) -> float:
+    name_lower = computer_name.lower()
+    for key, rate in _HETZNER_CCX_RATES.items():
+        if key in name_lower:
+            return rate
+    return _DEFAULT_HETZNER_RATE
+
+
+def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
+    """Add pk, space_group, cost_eur from AiiDA CalcJobNode.
+
+    For each summary with a uuid:
+    - Load CalcJobNode, get .pk
+    - Get input structure → spglib → space_group number
+    - Get computer name → Hetzner rate → cost_eur = duration * rate
+    Skips if uuid missing or node not loadable (sets fields to None).
+    Modifies summary_store in-place.
+    """
+    load_aiida_profile()
+
+    for summary in summary_store:
+        calc_uuid = summary.get("uuid")
+        if not calc_uuid:
+            continue
+
+        summary["pk"] = None
+        summary["space_group"] = None
+        summary["cost_eur"] = None
+        summary["calc_date"] = None
+
+        try:
+            calc = load_node(calc_uuid)
+        except Exception:
+            continue
+
+        summary["pk"] = calc.pk
+        summary["calc_date"] = calc.ctime.strftime("%Y-%m-%d %H:%M:%S")
+
+        try:
+            struct = calc.inputs.structure
+            ase_atoms = struct.get_ase()
+            import spglib
+            dataset = spglib.get_symmetry_dataset((
+                ase_atoms.cell,
+                ase_atoms.positions,
+                ase_atoms.get_atomic_numbers(),
+            ))
+            if dataset is not None:
+                summary["space_group"] = dataset.number
+        except Exception:
+            pass
+
+        try:
+            duration = summary.get("duration")
+            if duration is not None and not math.isnan(duration):
+                computer_name = calc.computer.name if calc.computer else ""
+                rate = _get_hetzner_rate(computer_name)
+                summary["cost_eur"] = round(duration * rate, 2)
+        except Exception:
+            pass
+
+        if summary.get("engine") == "fleur":
+            try:
+                seebeck = _fetch_fleur_seebeck(calc)
+                if seebeck:
+                    summary.update(seebeck)
+            except Exception:
+                pass
+
+
+def _fetch_fleur_seebeck(calc) -> dict | None:
+    """Walk up caller chain from a FLEUR CalcJobNode to find
+    FleurDOSLocalWorkChain and extract Seebeck data."""
+    node = calc
+    while node is not None:
+        ptype = getattr(node, 'process_type', '') or ''
+        if 'FleurDOSLocalWorkChain' in ptype:
+            try:
+                sd = node.outputs.output_seebeck.get_dict()
+                pd = node.outputs.output_dos_local_wc_para.get_dict()
+                return {
+                    "seebeck_coefficient_uvk": sd.get("seebeck_coefficient_uvk"),
+                    "mu_ev": sd.get("mu_ev"),
+                    "temperature_k": pd.get("temperature_k"),
+                }
+            except Exception:
+                return None
+        node = getattr(node, 'caller', None)
+    return None
+
+
 def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
     """
     For each summary with engine='fleur' ​​and field 'uuid' (CalcJobNode FLEUR):
@@ -136,7 +239,8 @@ def scan_calculations(
 
     Parameters:
     - root_dir: Path to the root directory to scan.
-    - aiida: Whether to extract UUIDs based on AiiDA path structure.
+    - aiida: Whether to enrich with AiiDA data (pk, space_group, cost_eur, displacement).
+            UUID is always extracted from path regardless of this flag.
     - verbose: Whether to print summaries to stdout.
     - skip_errors: Whether to skip entries with parsing errors in the summary.
     - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
@@ -185,9 +289,9 @@ def scan_calculations(
             summary["output_path"] = str(output_path)
             summary["engine"] = engine
             summary["calc_type"] = calc_type
-            if aiida:
-                uuid = extract_uuid_from_path(output_path, root_path)
-                summary["uuid"] = uuid
+            summary["calc_date"] = datetime.fromtimestamp(output_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            uuid = extract_uuid_from_path(output_path, root_path)
+            summary["uuid"] = uuid
             if skip_errors and math.isnan(summary.get('duration', float('nan'))):
                 continue
             summary_store.append(summary)
@@ -204,9 +308,9 @@ def scan_calculations(
             summary["engine"] = engine
             summary["calc_type"] = "optimise" if isinstance(summary, dict) and summary.get("fleur_modes", {}).get("relax", False) else "scf"
             summary.pop("fleur_modes", None)
-            if aiida:
-                uuid = extract_uuid_from_path(output_path, root_path)
-                summary["uuid"] = uuid
+            summary["calc_date"] = datetime.fromtimestamp(output_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            uuid = extract_uuid_from_path(output_path, root_path)
+            summary["uuid"] = uuid
             if skip_errors and math.isnan(summary.get('duration', float('nan'))):
                 continue
             summary_store.append(summary)
@@ -225,6 +329,7 @@ def scan_calculations(
 
     if aiida and summary_store:
         enrich_fleur_with_displacement(summary_store)
+        enrich_with_aiida_data(summary_store)
 
     return summary_store, error_dict_crystal, error_dict_fleur
 

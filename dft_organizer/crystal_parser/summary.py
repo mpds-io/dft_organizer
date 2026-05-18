@@ -134,8 +134,9 @@ def _parse_properties_only(path: Path) -> dict:
         "spin": float("nan"),
         "optgeom": False,
         "num_opt_cycles": 0,
-        "seebeck_avg": float("nan"),
-        "temperature": float("nan"),
+        "seebeck_coefficient_uvk": float("nan"),
+        "mu_ev": float("nan"),
+        "temperature_k": float("nan"),
     }
 
     with open(path, "r") as f:
@@ -162,11 +163,12 @@ def _parse_properties_only(path: Path) -> dict:
     seebeck_file = path.parent / "SEEBECK.DAT"
     if seebeck_file.exists():
         try:
-            avg_s, S_components, temperature = parse_seebeck_first_line(
+            avg_s, S_components, temperature, mu = parse_seebeck_first_line(
                 str(seebeck_file)
             )
-            results["seebeck_avg"] = avg_s
-            results["temperature"] = temperature
+            results["seebeck_coefficient_uvk"] = avg_s * 1e6
+            results["mu_ev"] = mu
+            results["temperature_k"] = temperature
         except Exception:
             pass
 
@@ -269,8 +271,9 @@ def parse_crystal_output(path: Path) -> dict:
                 "spin": float("nan"),
                 "optgeom": False,
                 "num_opt_cycles": 0,
-                "seebeck_avg": float("nan"),
-                "temperature": float("nan"),
+                "seebeck_coefficient_uvk": float("nan"),
+                "mu_ev": float("nan"),
+                "temperature_k": float("nan"),
             },
             2,
         )
@@ -330,12 +333,14 @@ def parse_crystal_output(path: Path) -> dict:
     seebeck_file = path.parent / "SEEBECK.DAT"
     if seebeck_file.exists():
         try:
-            avg_s, S_components, temperature = parse_seebeck_first_line(str(seebeck_file))
-            results["seebeck_avg"] = avg_s
-            results["temperature"] = temperature
+            avg_s, S_components, temperature, mu = parse_seebeck_first_line(str(seebeck_file))
+            results["seebeck_coefficient_uvk"] = avg_s * 1e6
+            results["mu_ev"] = mu
+            results["temperature_k"] = temperature
         except Exception:
-            results["seebeck_avg"] = float("nan")
-            results["temperature"] = float("nan")
+            results["seebeck_coefficient_uvk"] = float("nan")
+            results["mu_ev"] = float("nan")
+            results["temperature_k"] = float("nan")
 
     # band gap
     bandgap = float("nan")
