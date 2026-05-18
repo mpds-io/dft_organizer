@@ -61,6 +61,9 @@ out.xml
 *.bak
 *.backup
 
+# Environment
+.env
+
 # OpenCode
 .opencode/
 
@@ -68,4 +71,4 @@ out.xml
 export_*/*/
 tests_*/*/
 
-/aiida_playground_data_old
+/aiida_playground_data_old.env

@@ -38,6 +38,8 @@ dft-export-aiida = "dft_organizer.cli.archive_aiida_based_cli:cli"
 dft-extract = "dft_organizer.cli.extract_archives_cli:cli"
 dft-unpack = "dft_organizer.cli.rearchive_cli:cli"
 dft-report = "dft_organizer.cli.report_cli:cli"
+dft-report-aiida = "dft_organizer.cli.report_aiida_cli:cli"
+dft-seebeck-compare = "dft_organizer.cli.seebeck_compare_cli:cli"
 
 [tool.setuptools.packages.find]
 include = ["dft_organizer*"]

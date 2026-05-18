@@ -20,7 +20,7 @@ from dft_organizer.aiida.export import launch_aiida_export
     default="/tmp",
     type=click.Path(file_okay=False),
     show_default=True,
-    help="Directory where archives will be saved."
+    help="Directory where archives and reports will be saved."
 )
 @click.option(
     "--from-date",
@@ -42,7 +42,13 @@ from dft_organizer.aiida.export import launch_aiida_export
     default=False,
     help="Skip calculations that finished with errors (exit_status != 0)."
 )
-def cli(label, export_all, output_dir, from_date, to_date, skip_errors):
+@click.option(
+    "--report",
+    is_flag=True,
+    default=False,
+    help="Generate summary CSV, JSON, and error report from AiiDA data."
+)
+def cli(label, export_all, output_dir, from_date, to_date, skip_errors, report):
     """
     Export calculations from AiiDA into MPDS-format 7z archives.
 
@@ -50,6 +56,8 @@ def cli(label, export_all, output_dir, from_date, to_date, skip_errors):
 
     Each archive contains ELECTRON/, STRUCT/, TRANSPORT/ subfolders
     with calculation inputs/outputs, plus a README.txt.
+
+    Use --report to also generate a summary CSV, JSON, and error report.
     """
     if not label and not export_all:
         raise click.UsageError("Provide --label or use --export-all")
@@ -61,4 +69,5 @@ def cli(label, export_all, output_dir, from_date, to_date, skip_errors):
         from_date=from_date,
         to_date=to_date,
         skip_errors=skip_errors,
+        generate_report=report,
     )

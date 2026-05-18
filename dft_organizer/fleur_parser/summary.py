@@ -90,6 +90,15 @@ def parse_fleur_out_xml(filename: Path) -> dict:
                 "chemical_formula": get_formula(ase_obj, find_gcd=True)
             }
         )
+        try:
+            import spglib
+            dataset = spglib.get_symmetry_dataset((
+                ase_obj.get_cell(), ase_obj.get_positions(), ase_obj.get_atomic_numbers(),
+            ))
+            if dataset is not None:
+                results["space_group"] = dataset.number
+        except Exception:
+            pass
     except Exception as e:
         print(f"Error reading structure from file {filename}: {e}")
         results.update(_nan_cellpar_results())

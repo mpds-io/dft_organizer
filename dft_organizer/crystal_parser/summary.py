@@ -364,6 +364,15 @@ def parse_crystal_output(path: Path) -> dict:
             results["beta"] = round(float(beta), 2)
             results["gamma"] = round(float(gamma), 2)
             results["chemical_formula"] = get_formula(ase_obj, find_gcd=True)
+            try:
+                import spglib
+                dataset = spglib.get_symmetry_dataset((
+                    ase_obj.get_cell(), ase_obj.get_positions(), ase_obj.get_atomic_numbers(),
+                ))
+                if dataset is not None:
+                    results["space_group"] = dataset.number
+            except Exception:
+                pass
         else:
             raise KeyError
     except Exception:

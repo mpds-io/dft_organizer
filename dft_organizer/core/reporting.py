@@ -125,7 +125,7 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
         try:
             duration = summary.get("duration")
             if duration is not None and not math.isnan(duration):
-                computer_name = calc.computer.name if calc.computer else ""
+                computer_name = calc.computer.label if calc.computer else ""
                 rate = _get_hetzner_rate(computer_name)
                 summary["cost_eur"] = round(duration * rate, 2)
         except Exception:
@@ -380,12 +380,19 @@ def save_reports(
         return json.dumps(v)
 
     if summary_store:
-        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols", "bandgap"]
+        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols", "bandgap", "space_group"]
+        _DROP_KEYS = {
+            "techs_1_FMIXING", "techs_2", "optgeom", "num_opt_cycles",
+            "MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK",
+            "t1", "t5", "k", "H", "smear", "spin", "TOLINTEG",
+        }
         flat_summary = []
 
         for row in summary_store:
             try:
                 row = dict(row)
+                for dk in _DROP_KEYS:
+                    row.pop(dk, None)
                 for k in nested_keys:
                     if k in row:
                         try:
@@ -399,6 +406,11 @@ def save_reports(
         if flat_summary:
             df = pl.DataFrame(flat_summary)
             df.write_csv(save_dir / f"summary_{time_now}.csv")
+
+            json_path = save_dir / f"summary_{time_now}.json"
+            with open(json_path, "w") as f:
+                json.dump(flat_summary, f, indent=2, default=str)
+            print(f"Summary JSON saved to: {json_path}")
 
     if error_dict_fleur:
         print_report_fleur(error_dict_fleur)
@@ -495,7 +507,7 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
         return None
 
 
-def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "all", output_dir: Path | None = None, engine_type: str | None = None) -> None:
+def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "all", output_dir: Path | None = None, engine_type: str | None = None, from_date: str | None = None) -> None:
     """
     Scan a calculation tree, print a short summary to stdout
     and save a summary CSV plus error reports.
@@ -504,6 +516,7 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
     - output_dir: Directory to save CSV and reports. Defaults to /tmp/.
     - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
     - engine_type: Filter by engine: None (all), "crystal", or "fleur".
+    - from_date: Only include calculations modified on or after this date (YYYY-MM-DD).
     """
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
@@ -524,6 +537,14 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
         calculation_type=calculation_type,
         engine_type=engine_type,
     )
+
+    if from_date and summary_store:
+        from datetime import datetime
+        cutoff = datetime.strptime(from_date, "%Y-%m-%d")
+        summary_store = [
+            s for s in summary_store
+            if s.get("calc_date") and datetime.strptime(s["calc_date"], "%Y-%m-%d %H:%M:%S") >= cutoff
+        ]
 
     save_reports(root_path, summary_store, err_cr, err_fl, output_dir=save_dir)
 

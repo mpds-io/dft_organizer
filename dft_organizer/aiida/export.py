@@ -9,6 +9,7 @@ from aiida_crystal_dft.io.d12 import D12
 from aiida import load_profile as load_aiida_profile
 
 from dft_organizer.core import compress_with_7z, extract_7z
+from dft_organizer.aiida.reporting import generate_aiida_reports
 
 _aiida_loaded = False
 
@@ -423,6 +424,7 @@ def launch_aiida_export(
     from_date: str | None = None,
     to_date: str | None = None,
     skip_errors: bool = False,
+    generate_report: bool = False,
 ) -> None:
     """
     Collect files from AiiDA calculations and create MPDS-format 7z archives.
@@ -432,6 +434,7 @@ def launch_aiida_export(
 
     Provide --label for a single system (exact match), or --export-all for all.
     Use --from-date / --to-date to filter by creation date (YYYY-MM-DD).
+    Use --report to also generate summary CSV, JSON, and error report.
     """
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -447,16 +450,23 @@ def launch_aiida_export(
             calcs = systems[sys_name]
             export_system(calcs, output_dir, skip_errors=skip_errors)
         print(f"Export complete. Archives saved to {output_dir}")
-        return
-
-    if not label:
+    elif label:
+        calcs = calculations_for_label(label, from_date=from_date, to_date=to_date)
+        if not calcs:
+            print(f"Error: no calculations found with label '{label}' in AiiDA database.")
+            return
+        flat = [(lbl, uuid) for lbl, uuids in calcs.items() for uuid in uuids]
+        export_system(flat, output_dir, skip_errors=skip_errors)
+    else:
         print("Provide --label or use --export-all")
         return
 
-    calcs = calculations_for_label(label, from_date=from_date, to_date=to_date)
-    if not calcs:
-        print(f"Error: no calculations found with label '{label}' in AiiDA database.")
-        return
-
-    flat = [(lbl, uuid) for lbl, uuids in calcs.items() for uuid in uuids]
-    export_system(flat, output_dir, skip_errors=skip_errors)
+    if generate_report:
+        print("\n--- Generating reports from AiiDA data ---")
+        generate_aiida_reports(
+            label=label if not export_all else None,
+            from_date=from_date,
+            to_date=to_date,
+            skip_errors=skip_errors,
+            output_dir=output_dir,
+        )
