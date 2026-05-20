@@ -1,3 +1,36 @@
+"""Compare Seebeck coefficient values from ab initio calculations with MPDS reference data.
+
+Expected input formats
+---------------------
+
+Summary CSV (``csv_path``):
+  Must contain at least the following columns:
+
+  - ``chemical_formula`` — e.g. ``"BaO"``, ``"SrCuO2"``; normalised internally
+    via :func:`normalize_formula` so that ``"O2SRCU"`` → ``"CuO2Sr"`` etc.
+  - ``engine`` — ``"fleur"`` or ``"crystal"``
+  - ``seebeck_coefficient_uvk`` — Seebeck coefficient in µV/K (float)
+  - ``mu_ev`` — chemical potential in eV (float, may be empty)
+  - ``temperature_k`` — temperature in K (float, may be empty)
+  - ``calc_date`` — calculation date string, e.g. ``"2026-05-15 17:29:33"``
+
+  Typically produced by ``make_report_aiida_results.py`` or ``dft-report-aiida``.
+
+MPDS reference CSV (``mpds_dir``):
+  A directory of ``*.csv`` files or a single CSV file.  Each file must have
+  columns:
+
+  - ``phase_id`` — integer, MPDS phase identifier
+  - ``formula`` — chemical formula, e.g. ``"BaO"``
+  - ``sg`` — integer, space-group number
+  - ``entry`` — string, MPDS entry identifier (unused in comparison)
+  - ``seebeck`` — float, Seebeck coefficient in µV/K
+  - ``temperature`` — float, temperature in K (may be empty)
+
+  Formulas are normalised the same way as in the summary CSV so that
+  e.g. ``"CuAlSi"`` matches across both sources.
+"""
+
 import json
 import re
 import math
@@ -6,7 +39,6 @@ from datetime import datetime
 from pathlib import Path
 
 import polars as pl
-
 
 _ALL_ELEMENTS = {
     "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",

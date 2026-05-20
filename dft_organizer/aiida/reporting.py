@@ -125,6 +125,17 @@ def _build_date_filter(from_date: str | None, to_date: str | None) -> dict:
     return filt
 
 
+def _formula_from_label(label: str | None) -> str | None:
+    if not label or ":" not in label:
+        return None
+    candidate = label.split(":")[0].strip()
+    if not candidate or len(candidate) > 15:
+        return None
+    if not candidate[0].isupper():
+        return None
+    return candidate
+
+
 def _determine_calc_type(label: str) -> str:
     label_lower = label.lower()
     if any(kw in label_lower for kw in ('phonon', 'elastic', 'fort.34', 'fort.9')):
@@ -242,7 +253,7 @@ def _get_struct_attrs_from_calc(calc) -> dict | None:
 
 
 _null_summary_keys = [
-    "chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
+    "a", "b", "c", "alpha", "beta", "gamma",
     "cell", "positions", "numbers", "symbols",
     "bandgap", "sum_sq_disp", "rmsd_disp", "output_path",
     "cost_eur", "hetzner_rate",
@@ -309,7 +320,7 @@ def scan_aiida_calculations(
             "label": lbl,
             "engine": engine,
             "calc_type": _determine_calc_type(lbl),
-            "chemical_formula": None,
+"chemical_formula": _formula_from_label(lbl),
             "duration": duration,
             "pk": pk,
             "computer": comp,
@@ -386,6 +397,44 @@ def _enrich_with_structure_fast(
                                 summary["space_group"] = dataset.number
                     except Exception:
                         pass
+
+    crystal_no_formula = [s for s in summary_store
+                          if s['uuid'] in crystal_uuid_set
+                          and not s.get('chemical_formula')]
+    if crystal_no_formula:
+        print(f"Fallback: fetching structure via provenance for {len(crystal_no_formula)} CRYSTAL calcs without formula...")
+        done = 0
+        for summary in crystal_no_formula:
+            try:
+                calc = load_node(summary['uuid'])
+                struct_attrs = _get_struct_attrs_from_calc(calc)
+                if struct_attrs:
+                    struct_info = _extract_struct_info(struct_attrs)
+                    for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
+                              "cell", "positions", "numbers", "symbols"):
+                        if struct_info.get(k) is not None:
+                            summary[k] = struct_info[k]
+                    try:
+                        import spglib as _spglib
+                        cell = struct_attrs.get('cell')
+                        kinds = struct_attrs.get('kinds', [])
+                        sites = struct_attrs.get('sites', [])
+                        kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
+                        symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
+                        from ase.data import atomic_numbers as _ase_an
+                        numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
+                        positions = [s.get('position', [0, 0, 0]) for s in sites]
+                        if cell and numbers:
+                            dataset = _spglib.get_symmetry_dataset((cell, positions, numbers))
+                            if dataset is not None:
+                                summary["space_group"] = dataset.number
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            done += 1
+            if done % 25 == 0:
+                print(f"  CRYSTAL fallback: {done}/{len(crystal_no_formula)}")
 
     if fleur_uuid_set:
         print(f"Fetching structure data for {len(fleur_uuid_set)} FLEUR calcs (via provenance)...")

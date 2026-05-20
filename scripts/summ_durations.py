@@ -1,7 +1,21 @@
+"""Summarize total computation time per element from a FLEUR summary CSV.
+
+Usage:
+    python scripts/summ_durations.py
+
+Input:
+    CSV file with at least 'symbols' and 'duration' columns.
+    The 'symbols' column should contain Python list literals, e.g. '["Fe", "Se"]'.
+    Each unique element gets the total duration of all calculations it appears in.
+
+Output:
+    Prints a table of total hours per element, sorted alphabetically,
+    plus top-10 longest computations and summary statistics.
+"""
 import pandas as pd
 import ast
 
-df = pd.read_csv('res_fleur_05_12_2.csv')
+df = pd.read_csv('data/res_fleur_05_12_2.csv')
 
 symbols_col = 'symbols'
 
@@ -13,7 +27,6 @@ chemical_symbols = []
 for symbols_str in df[symbols_col]:
     try:
         symbols_list = ast.literal_eval(symbols_str)
-        # take first unique str (main type)
         unique_symbols = list(set(symbols_list))
         chemical_symbols.append(unique_symbols[0] if unique_symbols else None)
     except:
@@ -21,14 +34,13 @@ for symbols_str in df[symbols_col]:
 
 duration_by_structure = {}
 
-# group by chemical str and sum duration
 for symbol, duration in zip(chemical_symbols, df['duration']):
     if pd.isna(duration) or symbol is None:
         continue
-    
+
     if symbol not in duration_by_structure:
         duration_by_structure[symbol] = 0
-    
+
     duration_by_structure[symbol] += float(duration)
 
 print("=" * 50)

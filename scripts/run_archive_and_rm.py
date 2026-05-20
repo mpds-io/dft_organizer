@@ -1,9 +1,25 @@
-"""Script to run the archive and remove process on a specified root directory."""
-from pathlib import Path
-from dft_organizer.core import archive_and_remove
+"""Archive a calculation directory tree into a .7z file with report, then remove originals.
 
-archive_and_remove( 
-	Path("examples/fleur_data/inputfiles"), # Path("/data/aiida_crystal_17_12_25"),
-	make_report=True,
-	aiida=False
+Usage:
+    python scripts/run_archive_and_rm.py
+
+Input:
+    Directory tree with CRYSTAL OUTPUT / FLEUR out.xml files.
+
+Output:
+    - <dirname>.7z archive in the parent directory
+    - Summary CSV and error reports alongside the archive
+
+Parameters:
+    root_dir -- path to the calculation directory to archive
+    make_report -- scan and include a summary report before archiving
+    aiida -- extract UUID from path structure and enrich with AiiDA data
+"""
+from pathlib import Path
+from dft_organizer.core.archive_core import archive_and_save
+
+archive_and_save(
+    Path("examples/fleur_data/inputfiles"),
+    make_report=True,
+    aiida=False,
 )
