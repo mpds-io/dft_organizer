@@ -14,6 +14,7 @@ import numpy as np
 
 from dft_organizer.aiida_utils import extract_uuid_from_path
 from dft_organizer.utils import detect_engine, get_table_string
+from dft_organizer.pricing import get_cloud_rate, get_cost
 from dft_organizer.crystal_parser import (
     parse_crystal_output,
     is_properties_output,
@@ -58,24 +59,7 @@ def structure_displacement_ase(atoms_init, atoms_final) -> dict:
     return {"sum_sq_disp": sum_sq, "rmsd_disp": rmsd}
 
 
-_HETZNER_CCX_RATES: dict[str, float] = {
-    "ccx13": 0.0256,
-    "ccx23": 0.0505,
-    "ccx33": 0.1001,
-    "ccx43": 0.2003,
-    "ccx51": 0.4006,
-    "ccx53": 0.4006,
-    "ccx63": 0.6001,
-}
-_DEFAULT_HETZNER_RATE: float = 0.4006  # CCX53
 
-
-def _get_hetzner_rate(computer_name: str) -> float:
-    name_lower = computer_name.lower()
-    for key, rate in _HETZNER_CCX_RATES.items():
-        if key in name_lower:
-            return rate
-    return _DEFAULT_HETZNER_RATE
 
 
 def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
@@ -84,7 +68,7 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
     For each summary with a uuid:
     - Load CalcJobNode, get .pk
     - Get input structure → spglib → space_group number
-    - Get computer name → Hetzner rate → cost_eur = duration * rate
+    - Get computer name → cloud rate → cost = duration * rate
     Skips if uuid missing or node not loadable (sets fields to None).
     Modifies summary_store in-place.
     """
@@ -124,10 +108,9 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
 
         try:
             duration = summary.get("duration")
-            if duration is not None and not math.isnan(duration):
-                computer_name = calc.computer.label if calc.computer else ""
-                rate = _get_hetzner_rate(computer_name)
-                summary["cost_eur"] = round(duration * rate, 2)
+            cost = get_cost(duration, calc.computer.label if calc.computer else "", provider="hetzner")
+            if cost is not None:
+                summary["cost_eur"] = cost
         except Exception:
             pass
 

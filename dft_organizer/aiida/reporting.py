@@ -26,19 +26,7 @@ def _ensure_aiida():
         _aiida_loaded = True
 
 
-_HETZNER_CCX_RATES = {
-    "ccx13": 0.0256, "ccx23": 0.0505, "ccx33": 0.1001,
-    "ccx43": 0.2003, "ccx51": 0.4006, "ccx53": 0.4006, "ccx63": 0.6001,
-}
-_DEFAULT_HETZNER_RATE = 0.4006
-
-
-def _get_hetzner_rate(computer_name: str) -> float:
-    name_lower = computer_name.lower()
-    for key, rate in _HETZNER_CCX_RATES.items():
-        if key in name_lower:
-            return rate
-    return _DEFAULT_HETZNER_RATE
+from dft_organizer.pricing import get_cloud_rate, get_cost
 
 
 def _fetch_fleur_seebeck(calc) -> dict | None:
@@ -332,9 +320,10 @@ def scan_aiida_calculations(
             summary[k] = None
 
         if comp:
-            summary["hetzner_rate"] = _get_hetzner_rate(comp)
-            if duration is not None:
-                summary["cost_eur"] = round(duration * _get_hetzner_rate(comp), 2)
+            summary["hetzner_rate"] = get_cloud_rate(comp, provider="hetzner")
+            cost = get_cost(duration, comp, provider="hetzner")
+            if cost is not None:
+                summary["cost_eur"] = cost
 
         if engine == 'fleur':
             fleur_uuids.append(uuid)
