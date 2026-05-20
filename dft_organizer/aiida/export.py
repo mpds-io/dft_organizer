@@ -32,6 +32,8 @@ class CalcLabel(StrEnum):
 
 FILES_FOR_TYPE = {
     CalcLabel.ELECTRON: ['BAND.DAT', 'DOSS.DAT', 'fort.25'],
+    CalcLabel.PHONON: ['PHONON.DAT', 'FREQ.DAT'],
+    CalcLabel.ELASTIC: ['ELASTIC.DAT'],
     CalcLabel.STRUCT: ['fort.34', 'fort.9'],
     CalcLabel.TRANSPORT: ['SEEBECK.DAT', 'SIGMA.DAT', 'SIGMAS.DAT', 'KAPPA.DAT', 'TDF.DAT', 'README.txt'],
 }
@@ -143,8 +145,10 @@ def _determine_calc_type(calc_label: str) -> CalcLabel | None:
     label_lower = calc_label.lower()
     if any(kw in label_lower for kw in ('band', 'doss', 'fort.25')):
         return CalcLabel.ELECTRON
-    if any(kw in label_lower for kw in ('phonon', 'elastic')):
-        return CalcLabel.STRUCT
+    if 'phonon' in label_lower:
+        return CalcLabel.PHONON
+    if 'elastic' in label_lower:
+        return CalcLabel.ELASTIC
     if any(kw in label_lower for kw in ('geometry', 'fort.34', 'fort.9')):
         return CalcLabel.STRUCT
     if any(kw in label_lower for kw in ('transport', 'seebeck', 'sigma')):

@@ -93,9 +93,18 @@ _PERIODIC_TABLE = {
     86: "Rn", 87: "Fr", 88: "Ra", 89: "Ac", 90: "Th", 91: "Pa", 92: "U",
     93: "Np", 94: "Pu", 95: "Am", 96: "Cm", 97: "Bk", 98: "Cf", 99: "Es",
     100: "Fm", 101: "Md", 102: "No", 103: "Lr",
-    238: "U",
-    240: "Zr",
 }
+
+
+def _crystal_atomic_number_to_symbol(num: int) -> str | None:
+    """Convert CRYSTAL atomic number to element symbol.
+
+    CRYSTAL uses numbers >=200 to indicate atoms with effective core
+    potentials (ECP): atomic_number = 200 + Z, where Z is the real
+    element number.  E.g. 238 -> Sr (Z=38) with ECP, not U (Z=92).
+    """
+    z = num - 200 if num >= 200 else num
+    return _PERIODIC_TABLE.get(z)
 
 
 def is_properties_output(path: Path) -> bool:
