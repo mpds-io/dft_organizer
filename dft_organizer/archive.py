@@ -5,9 +5,9 @@ from typing import Optional
 
 import polars as pl
 
-from dft_organizer.core import scan_calculations, save_reports
-from dft_organizer.core import compress_with_7z, extract_7z
-from dft_organizer.core import generate_reports_only
+from dft_organizer.reporting import scan_calculations, save_reports
+from dft_organizer.sevenzip import compress_with_7z, extract_7z
+from dft_organizer.reporting import generate_reports_only
 
 
 def _serialize_nested(v):

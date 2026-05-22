@@ -71,6 +71,9 @@ out.xml
 export_*/*/
 tests_*/*/
 
-/aiida_playground_data_old.env
-/data_old
-/data
+aiida_playground_data_old.env
+data_old
+data
+./example_ya_conf.conf
+./openspec/config.yaml
+export_aiida

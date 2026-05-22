@@ -8,7 +8,7 @@ from aiida.orm import load_node, QueryBuilder, CalcJobNode
 from aiida_crystal_dft.io.d12 import D12
 from aiida import load_profile as load_aiida_profile
 
-from dft_organizer.core import compress_with_7z, extract_7z
+from dft_organizer.sevenzip import compress_with_7z, extract_7z
 from dft_organizer.aiida.reporting import generate_aiida_reports
 
 _aiida_loaded = False

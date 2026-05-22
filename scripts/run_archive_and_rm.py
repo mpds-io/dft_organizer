@@ -16,7 +16,7 @@ Parameters:
     aiida -- extract UUID from path structure and enrich with AiiDA data
 """
 from pathlib import Path
-from dft_organizer.core.archive_core import archive_and_save
+from dft_organizer.archive import archive_and_save
 
 archive_and_save(
     Path("examples/fleur_data/inputfiles"),

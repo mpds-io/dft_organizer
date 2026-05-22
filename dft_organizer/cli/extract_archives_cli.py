@@ -1,6 +1,6 @@
 import click
 from pathlib import Path
-from dft_organizer.core import extract_7z
+from dft_organizer.sevenzip import extract_7z
 
 
 @click.command()

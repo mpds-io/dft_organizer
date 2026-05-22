@@ -21,7 +21,7 @@ Parameters:
     output_dir -- directory for output files
 """
 from pathlib import Path
-from dft_organizer.core import generate_reports_only
+from dft_organizer.reporting import generate_reports_only
 
 generate_reports_only(
     Path("/data/aiida"),
@@ -29,5 +29,5 @@ generate_reports_only(
     skip_errors=True,
     calculation_type="all",
     engine_type=None,
-    output_dir=Path("/root/projects/dft_organizer"),
+    output_dir=Path("dft_organizer/reports/local"),
 ) 
