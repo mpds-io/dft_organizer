@@ -194,7 +194,12 @@ def _parse_properties_only(path: Path) -> dict:
                 continue
             parts = line.split()
             if len(parts) >= 4:
-                symbol = parts[2].strip()
+                token = parts[2].strip()
+                if token.isdigit():
+                    converted = _crystal_atomic_number_to_symbol(int(token))
+                    symbol = converted if converted else token
+                else:
+                    symbol = token
                 symbols.append(symbol)
         if symbols:
             from collections import Counter
