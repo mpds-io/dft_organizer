@@ -501,6 +501,13 @@ def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[
     except Exception:
         print("  Skipping displacement data (DB connection failed)")
 
+    import math
+    for summary in summary_store:
+        if summary.get("engine") == "fleur" and summary.get("calc_type") == "scf":
+            sq = summary.get("sum_sq_disp")
+            if sq is not None and not (isinstance(sq, float) and math.isnan(sq)) and float(sq) > 0.001:
+                summary["calc_type"] = "optimise"
+
 
 _SUMMARY_CSV_COLUMNS = [
     "duration", "bandgap", "a", "b", "c", "alpha", "beta", "gamma",

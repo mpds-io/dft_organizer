@@ -29,5 +29,5 @@ generate_reports_only(
     skip_errors=True,
     calculation_type="all",
     engine_type=None,
-    output_dir=Path("dft_organizer/reports/local"),
+    output_dir=Path("reports/local"),
 ) 

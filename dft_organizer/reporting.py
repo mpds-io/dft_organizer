@@ -289,7 +289,12 @@ def scan_calculations(
             summary = parse_fleur_output(output_path)
             summary["output_path"] = str(output_path)
             summary["engine"] = engine
-            summary["calc_type"] = "optimise" if isinstance(summary, dict) and summary.get("fleur_modes", {}).get("relax", False) else "scf"
+            fleur_modes = summary.get("fleur_modes", {})
+            is_relax = isinstance(fleur_modes, dict) and fleur_modes.get("relax", False)
+            has_disp = summary.get("sum_sq_disp") is not None and not (
+                isinstance(summary.get("sum_sq_disp"), float) and math.isnan(summary.get("sum_sq_disp", 0))
+            ) and float(summary.get("sum_sq_disp", 0)) > 0.001
+            summary["calc_type"] = "optimise" if (is_relax or has_disp) else "scf"
             summary.pop("fleur_modes", None)
             summary["calc_date"] = datetime.fromtimestamp(output_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
             uuid = extract_uuid_from_path(output_path, root_path)
@@ -313,6 +318,12 @@ def scan_calculations(
     if aiida and summary_store:
         enrich_fleur_with_displacement(summary_store)
         enrich_with_aiida_data(summary_store)
+
+        for summary in summary_store:
+            if summary.get("engine") == "fleur" and summary.get("calc_type") == "scf":
+                sq = summary.get("sum_sq_disp")
+                if sq is not None and not (isinstance(sq, float) and math.isnan(sq)) and float(sq) > 0.001:
+                    summary["calc_type"] = "optimise"
 
     return summary_store, error_dict_crystal, error_dict_fleur
 
