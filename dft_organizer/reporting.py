@@ -59,9 +59,6 @@ def structure_displacement_ase(atoms_init, atoms_final) -> dict:
     return {"sum_sq_disp": sum_sq, "rmsd_disp": rmsd}
 
 
-
-
-
 def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
     """Add pk, space_group, cost_eur from AiiDA CalcJobNode.
 
