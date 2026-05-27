@@ -7,12 +7,12 @@ def make_report(root: Path, files: str, error_dict: dict = {}) -> dict:
     Make report with error description for CRYSTAL calculations.
     """
     if "fort.87" in files:
-        with open(os.path.join(root, "fort.87"), "r") as fort_file:
+        with open(os.path.join(root, "fort.87"), "r", errors="replace") as fort_file:
             fort_content = fort_file.read().strip()
 
         if "INPUT" in files:
             # just first row
-            with open(os.path.join(root, "INPUT"), "r") as input_file:
+            with open(os.path.join(root, "INPUT"), "r", errors="replace") as input_file:
                 first_line = input_file.readline().strip()
 
             if fort_content not in error_dict:

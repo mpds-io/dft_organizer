@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 
-from dft_organizer.core import restore_archives_iterative
+from dft_organizer.archive import restore_archives_iterative
 
 
 @click.command()
