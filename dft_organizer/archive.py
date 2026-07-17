@@ -35,13 +35,13 @@ def archive_and_save(
     error_dict_fleur = {}
 
     if make_report:
-        summary_store, error_dict_crystal, error_dict_fleur = scan_calculations(
+        summary_store, error_dict_crystal, error_dict_fleur, phonon_store = scan_calculations(
             root_path,
             aiida=aiida,
             verbose=True,
             skip_errors=skip_errors
         )
-        save_reports(root_path, summary_store, error_dict_crystal, error_dict_fleur)
+        save_reports(root_path, summary_store, error_dict_crystal, error_dict_fleur, phonon_store=phonon_store)
 
     root_archive_path = root_path.parent / f"{root_path.name}.7z"
     if compress_with_7z(root_path, root_archive_path):

@@ -59,17 +59,35 @@ Example:
 
 ### Generate reports without archiving
 
-dft-report --path <directory_path> [--aiida|--no-aiida] [--skip-errors|--no-skip-errors]
+dft-report --path <directory_path> [--aiida|--no-aiida] [--skip-errors|--no-skip-errors] [--calc-type TYPE]
 
 - `--path`         Root directory containing calculations
 - `--aiida`        Extract UUID from AiiDA directory structure
 - `--no-aiida`     Do not extract UUID
 - `--skip-errors`  Skip calculations with errors to create summary table
+- `--calc-type`    Filter by calculation type: `scf`, `optimise`, `phonon`, `transport`, `elastic`, `electron`, `properties`, or `all` (default). For CRYSTAL, `phonon`/`transport`/`elastic`/`electron` are detected from sibling files (`SEEBECK.DAT`, `PHONON.DAT`/`FREQ.DAT`, `ELASTIC.DAT`, `BAND.DAT`/`DOSS.DAT`) or keywords in the OUTPUT file.
 
 Creates under parent directory:
 - `summary_<timestamp>.csv`
 - `report_crystal_<timestamp>.txt`
 - `report_fleur_<timestamp>.txt`
+
+
+### Generate reports from AiiDA database (no archiving)
+
+dft-report-aiida [--label LABEL] [--from-date YYYY-MM-DD] [--to-date YYYY-MM-DD] [--calc-type TYPE] [--skip-errors] [--output-dir DIR]
+
+- `--label`        Filter by calculation label (exact match)
+- `--from-date`    Only include calculations created on or after this date
+- `--to-date`      Only include calculations created on or before this date
+- `--calc-type`    Only include calculations of this type, e.g. `phonon`, `transport`, `elastic`, `electron`, `optimise`, `scf`, `struct`, `hform`. Filtering is applied after enrichment (so `scf` rows reclassified to `transport` via `SEEBECK.DAT` are kept by `--calc-type transport`).
+- `--skip-errors`  Skip calculations with exit_status != 0
+- `--output-dir`   Directory to save reports (default `/tmp`)
+
+Creates:
+- `summary_<timestamp>.csv`
+- `summary_<timestamp>.json`
+- `report_crystal_<timestamp>.txt` / `report_fleur_<timestamp>.txt` (only if errors found)
 
 
 ## Python API
@@ -144,6 +162,15 @@ Output files:
 - `rmsd_disp`           Root-mean-square displacement between first and last structure.
 - `output_path`         Full path to the main OUTPUT file for this calculation.
 - `uuid`                Calculation UUID (only in AiiDA mode, extracted from directory layout).
+- `calc_type`           Calculation type: `scf`, `optimise`, `phonon`, `transport`, `electron`, `elastic`, `struct`, `hform`. In AiiDA-DB mode, `scf` rows whose retrieved repository contains `SEEBECK.DAT` are reclassified as `transport`.
+- `has_phonons`         True when CRYSTAL phonon frequencies were parsed (AiiDA-DB mode, `calc_type == 'phonon'`).
+- `phonon_freq_min`     Minimum phonon frequency in THz across all q-points.
+- `phonon_freq_max`     Maximum phonon frequency in THz across all q-points.
+- `phonon_n_imag`       Number of imaginary (unstable) phonon modes (THz < -1e-3).
+- `phonon_modes_count`  Number of modes at the first q-point.
+- `seebeck_coefficient_uvk`  Average Seebeck coefficient in µV/K. For CRYSTAL, parsed from `SEEBECK.DAT` (transport calcs); for FLEUR, from `FleurDOSLocalWorkChain` outputs.
+- `mu_ev`               Chemical potential. For CRYSTAL, in Hartree (from `SEEBECK.DAT`); for FLEUR, in eV. Note: units differ between engines.
+- `temperature_k`       Temperature in Kelvin at which Seebeck was computed.
 
 
 ## License

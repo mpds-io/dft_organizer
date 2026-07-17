@@ -35,8 +35,15 @@ from dft_organizer.reporting import generate_reports_only
     metavar="YYYY-MM-DD",
     help="Only include calculations modified on or after this date.",
 )
+@click.option(
+    "--calc-type",
+    type=str,
+    default="all",
+    metavar="TYPE",
+    help="Filter by calculation type: scf, optimise, phonon, transport, elastic, electron, properties, or all (default).",
+)
 
-def cli(path: str, aiida: bool, skip_errors: bool, output_dir: str | None, from_date: str | None) -> None:
+def cli(path: str, aiida: bool, skip_errors: bool, output_dir: str | None, from_date: str | None, calc_type: str | None) -> None:
     """
     Generate summary CSV and error reports without archiving.
     """
@@ -46,6 +53,7 @@ def cli(path: str, aiida: bool, skip_errors: bool, output_dir: str | None, from_
         skip_errors=skip_errors,
         output_dir=Path(output_dir) if output_dir else None,
         from_date=from_date,
+        calculation_type=calc_type or "all",
     )
 
 

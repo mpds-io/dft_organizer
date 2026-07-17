@@ -31,12 +31,25 @@ from dft_organizer.aiida.reporting import generate_aiida_reports
     help="Only include calculations created on or before this date."
 )
 @click.option(
+    "--calc-type",
+    type=str,
+    default=None,
+    metavar="TYPE",
+    help="Only include calculations of this type, e.g. phonon, transport, elastic, electron, optimise, scf, struct, hform."
+)
+@click.option(
     "--skip-errors",
     is_flag=True,
     default=False,
     help="Skip calculations that finished with errors (exit_status != 0)."
 )
-def cli(label, output_dir, from_date, to_date, skip_errors):
+@click.option(
+    "--engine",
+    type=click.Choice(["crystal", "fleur"], case_sensitive=False),
+    default=None,
+    help="Only include calculations of this engine (crystal or fleur). Use 'crystal' for crystal-only reports (much faster — skips FLEUR enrichment)."
+)
+def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine):
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
 
@@ -50,6 +63,8 @@ def cli(label, output_dir, from_date, to_date, skip_errors):
         to_date=to_date,
         skip_errors=skip_errors,
         output_dir=output_dir,
+        calc_type=calc_type,
+        engine=engine,
     )
 
 

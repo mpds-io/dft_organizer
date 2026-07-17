@@ -26,7 +26,7 @@ from dft_organizer.reporting import generate_reports_only
 generate_reports_only(
     Path("/data/aiida"),
     aiida=True,
-    skip_errors=True,
+    skip_errors=False,
     calculation_type="all",
     engine_type=None,
     output_dir=Path("reports/local"),

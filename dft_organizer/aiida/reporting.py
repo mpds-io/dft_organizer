@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Any
 
 import json
+import shutil
+import tempfile
 import polars as pl
 from aiida import load_profile as load_aiida_profile
 from aiida.orm import QueryBuilder, CalcJobNode, Computer, load_node, StructureData
@@ -14,6 +16,9 @@ from dft_organizer.aiida.aiida_links_tree import (
     fetch_tree_from_db,
     find_first_last_structure_uuids,
 )
+from dft_organizer.aiida.export import determine_calc_type_summary
+from dft_organizer.crystal_parser import parse_phonon_from_output
+from dft_organizer.crystal_parser.parse_properties import parse_seebeck_first_line
 
 
 _aiida_loaded = False
@@ -124,26 +129,71 @@ def _formula_from_label(label: str | None) -> str | None:
     return candidate
 
 
-def _determine_calc_type(label: str) -> str:
-    label_lower = label.lower()
-    if any(kw in label_lower for kw in ('phonon', 'elastic', 'fort.34', 'fort.9')):
-        return 'properties'
-    if any(kw in label_lower for kw in ('band', 'doss', 'fort.25', 'transport', 'seebeck', 'sigma', 'kappa')):
-        return 'properties'
-    if any(kw in label_lower for kw in ('geometry', 'optim', 'relax')):
-        return 'optimise'
-    return 'scf'
-
-
-def _formula_from_label(label: str | None) -> str | None:
-    if not label or ":" not in label:
+def _formula_from_workchain_label(label: str | None) -> str | None:
+    """Extract a chemical formula from a workchain label like
+    ``'MgO/225 seebeck pipeline'`` (``'/'``-separated, first field)."""
+    if not label or "/" not in label:
         return None
-    candidate = label.split(":")[0].strip()
+    candidate = label.split("/")[0].strip()
     if not candidate or len(candidate) > 15:
         return None
     if not candidate[0].isupper():
         return None
     return candidate
+
+
+def _sgs_from_workchain_label(label: str | None) -> int | None:
+    """Extract space-group number from a workchain label like
+    ``'Co2As/189 Seebeck direct'`` (integer after ``'/'``)."""
+    if not label or "/" not in label:
+        return None
+    rest = label.split("/", 1)[1].strip()
+    if not rest:
+        return None
+    token = rest.split()[0] if " " in rest else rest
+    try:
+        return int(token)
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_struct_attrs_to_summary(summary: dict, struct_attrs: dict) -> None:
+    """Fill formula / cell / space_group into summary from StructureData attributes."""
+    struct_info = _extract_struct_info(struct_attrs)
+    for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
+              "cell", "positions", "numbers", "symbols"):
+        if struct_info.get(k) is not None:
+            summary[k] = struct_info[k]
+    try:
+        import spglib
+        cell = struct_attrs.get('cell')
+        kinds = struct_attrs.get('kinds', [])
+        sites = struct_attrs.get('sites', [])
+        kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
+        symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
+        from ase.data import atomic_numbers as _ase_an
+        numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
+        positions = [s.get('position', [0, 0, 0]) for s in sites]
+        if cell and numbers:
+            dataset = spglib.get_symmetry_dataset((cell, positions, numbers))
+            if dataset is not None:
+                summary["space_group"] = dataset.number
+    except Exception:
+        pass
+
+
+def _get_struct_attrs_from_crystal_calc_uuid(uuid_str: str) -> dict | None:
+    """Load the CRYSTAL SCF calc referenced by a ``crystal_calc_uuid`` Str
+    input and return the attributes of its ``structure`` StructureData input.
+    Returns ``None`` if anything is missing."""
+    try:
+        scf = load_node(uuid_str)
+    except Exception:
+        return None
+    for link in scf.base.links.get_incoming().all():
+        if link.link_label == 'structure':
+            return link.node.attributes
+    return None
 
 
 def _extract_struct_info(attrs: dict | None) -> dict:
@@ -245,6 +295,8 @@ _null_summary_keys = [
     "cell", "positions", "numbers", "symbols",
     "bandgap", "sum_sq_disp", "rmsd_disp", "output_path",
     "cost_eur", "hetzner_rate",
+    "has_phonons", "phonon_freq_min", "phonon_freq_max",
+    "phonon_n_imag", "phonon_modes_count",
 ]
 
 
@@ -253,6 +305,8 @@ def scan_aiida_calculations(
     from_date: str | None = None,
     to_date: str | None = None,
     skip_errors: bool = False,
+    calc_type_filter: str | None = None,
+    engine: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Query AiiDA CalcJobNodes and build a summary store for reporting.
@@ -264,6 +318,12 @@ def scan_aiida_calculations(
     - from_date: Only include calcs created on or after this date (YYYY-MM-DD)
     - to_date: Only include calcs created on or before this date (YYYY-MM-DD)
     - skip_errors: Skip calculations with exit_status != 0
+    - calc_type_filter: If set, pre-filter rows by label-based calc_type to skip
+      expensive enrichment for rows that will be dropped anyway. Note that
+      ``transport`` is special: ``scf`` rows are kept (they may be reclassified
+      to ``transport`` during enrichment via ``SEEBECK.DAT``), so the final
+      ``calc_type`` filtering must still be applied by the caller.
+    - engine: If set ('crystal' or 'fleur'), only include calcs of that engine.
 
     Returns: list of summary dicts
     """
@@ -275,6 +335,10 @@ def scan_aiida_calculations(
     date_filter = _build_date_filter(from_date, to_date)
     if date_filter:
         filters['ctime'] = date_filter
+    if engine == 'crystal':
+        filters['process_type'] = {'like': '%crystal%'}
+    elif engine == 'fleur':
+        filters['process_type'] = {'like': '%fleur%'}
 
     print("Querying AiiDA database...")
     qb = QueryBuilder()
@@ -294,10 +358,17 @@ def scan_aiida_calculations(
         exit_status = attrs.get('exit_status') if attrs else None
         exit_message = str(attrs.get('exit_message', '')) if attrs else ''
 
-        if skip_errors and exit_status is not None and exit_status != 0:
+        if skip_errors and (exit_status is None or exit_status != 0):
             continue
 
         engine = _engine_from_process_type(process_type) or 'unknown'
+
+        # Pre-filter by label-based calc_type to skip expensive enrichment.
+        # transport is kept (scf rows may become transport via SEEBECK.DAT).
+        if calc_type_filter and calc_type_filter != 'transport':
+            pre_type = determine_calc_type_summary(lbl)
+            if pre_type != calc_type_filter:
+                continue
 
         duration = None
         if ctime and mtime:
@@ -307,7 +378,7 @@ def scan_aiida_calculations(
             "uuid": uuid,
             "label": lbl,
             "engine": engine,
-            "calc_type": _determine_calc_type(lbl),
+            "calc_type": determine_calc_type_summary(lbl),
 "chemical_formula": _formula_from_label(lbl),
             "duration": duration,
             "pk": pk,
@@ -333,6 +404,10 @@ def scan_aiida_calculations(
         summary_store.append(summary)
 
     _enrich_with_structure_fast(summary_store, crystal_uuids, fleur_uuids)
+
+    if crystal_uuids:
+        print(f"Enriching {len(crystal_uuids)} CRYSTAL calculations (phonon, seebeck)...")
+        _enrich_crystal_extras(summary_store, crystal_uuids)
 
     if fleur_uuids:
         print(f"Enriching {len(fleur_uuids)} FLEUR calculations (Seebeck, displacement)...")
@@ -425,6 +500,58 @@ def _enrich_with_structure_fast(
             if done % 25 == 0:
                 print(f"  CRYSTAL fallback: {done}/{len(crystal_no_formula)}")
 
+    # Second fallback: for CRYSTAL calcs still without formula, try several
+    # workchain-input sources (mpds_query, crystal_calc_uuid, workchain label).
+    crystal_still_no_formula = [s for s in summary_store
+                                if s['uuid'] in crystal_uuid_set
+                                and not s.get('chemical_formula')]
+    if crystal_still_no_formula:
+        for summary in crystal_still_no_formula:
+            try:
+                calc = load_node(summary['uuid'])
+                caller = calc.caller
+                if caller is None:
+                    continue
+                cur = caller
+                for _ in range(5):
+                    for link in cur.base.links.get_incoming().all():
+                        lbl = link.link_label
+                        if lbl == 'mpds_query':
+                            q = link.node
+                            qd = q.get_dict() if hasattr(q, 'get_dict') else {}
+                            formulae = qd.get('formulae')
+                            sgs = qd.get('sgs')
+                            if formulae and not summary.get('chemical_formula'):
+                                summary['chemical_formula'] = formulae
+                            if sgs and summary.get('space_group') is None:
+                                try:
+                                    summary['space_group'] = int(sgs)
+                                except (TypeError, ValueError):
+                                    pass
+                        elif lbl == 'crystal_calc_uuid':
+                            try:
+                                scf_uuid = link.node.value
+                                struct_attrs = _get_struct_attrs_from_crystal_calc_uuid(scf_uuid)
+                                if struct_attrs:
+                                    _apply_struct_attrs_to_summary(summary, struct_attrs)
+                            except Exception:
+                                pass
+                    # workchain label at this level (e.g. 'Co2As/189 Seebeck direct')
+                    if cur.label:
+                        if not summary.get('chemical_formula'):
+                            summary['chemical_formula'] = _formula_from_workchain_label(cur.label)
+                        if summary.get('space_group') is None:
+                            summary['space_group'] = _sgs_from_workchain_label(cur.label)
+                    if summary.get('chemical_formula') and summary.get('space_group') is not None:
+                        break
+                    parents = [l.node for l in cur.base.links.get_incoming()
+                                if l.link_type.name == 'CALL_WORK']
+                    if not parents:
+                        break
+                    cur = parents[0]
+            except Exception:
+                pass
+
     if fleur_uuid_set:
         print(f"Fetching structure data for {len(fleur_uuid_set)} FLEUR calcs (via provenance)...")
         done = 0
@@ -460,6 +587,100 @@ def _enrich_with_structure_fast(
                 done += 1
                 if done % 25 == 0:
                     print(f"  FLEUR structure: {done}/{len(fleur_uuid_set)}")
+
+
+def _retrieved_file_text(calc, fname: str) -> str | None:
+    """Read a file from a CalcJobNode retrieved repository as text (utf-8, tolerant)."""
+    try:
+        repo = calc.outputs.retrieved
+        if fname not in repo.list_object_names():
+            return None
+        with repo.open(fname, "rb") as src:
+            return src.read().decode("utf-8", "ignore")
+    except Exception:
+        return None
+
+
+def _enrich_crystal_extras(summary_store: list[dict[str, Any]], crystal_uuids: list[str]) -> None:
+    """Enrich CRYSTAL summaries with phonon frequencies and Seebeck data.
+
+    For ``calc_type == 'phonon'`` rows, parse the MODES block of the
+    retrieved ``OUTPUT`` file (via :func:`parse_phonon_from_output`) and fill
+    ``has_phonons``, ``phonon_freq_min``, ``phonon_freq_max``,
+    ``phonon_n_imag``, ``phonon_modes_count``. For ``calc_type == 'transport'``
+    rows, parse the retrieved ``SEEBECK.DAT`` (via
+    :func:`parse_seebeck_first_line`) and fill ``seebeck_coefficient_uvk``,
+    ``mu_ev``, ``temperature_k``.
+
+    As a fallback, ``scf`` rows whose retrieved repository contains
+    ``SEEBECK.DAT`` are reclassified to ``transport`` (and parsed), matching
+    the file-based detection used by the local-filesystem scan
+    (``crystal_parser/summary.py``).
+    """
+    uuid_to_idx = {s["uuid"]: i for i, s in enumerate(summary_store)
+                   if s.get("uuid") in set(crystal_uuids)}
+
+    phonon_count = 0
+    seebeck_count = 0
+    for uuid in crystal_uuids:
+        idx = uuid_to_idx.get(uuid)
+        if idx is None:
+            continue
+        summary = summary_store[idx]
+        calc_type = summary.get("calc_type")
+        try:
+            calc = load_node(uuid)
+        except Exception:
+            continue
+
+        try:
+            repo_names = set(calc.outputs.retrieved.list_object_names())
+        except Exception:
+            repo_names = set()
+
+        effective_type = calc_type
+        if calc_type == "scf" and "SEEBECK.DAT" in repo_names:
+            effective_type = "transport"
+            summary["calc_type"] = "transport"
+
+        if effective_type == "phonon":
+            text = _retrieved_file_text(calc, "OUTPUT")
+            if not text:
+                continue
+            try:
+                parsed = parse_phonon_from_output(text)
+            except Exception:
+                parsed = None
+            if parsed:
+                summary["has_phonons"] = parsed.get("has_phonons")
+                summary["phonon_freq_min"] = parsed.get("phonon_freq_min")
+                summary["phonon_freq_max"] = parsed.get("phonon_freq_max")
+                summary["phonon_n_imag"] = parsed.get("phonon_n_imag")
+                summary["phonon_modes_count"] = parsed.get("phonon_modes_count")
+            phonon_count += 1
+            if phonon_count % 25 == 0:
+                print(f"  Crystal phonon: {phonon_count}/{len(crystal_uuids)}")
+
+        elif effective_type == "transport":
+            if "SEEBECK.DAT" not in repo_names:
+                continue
+            try:
+                tmp_dir = Path(tempfile.mkdtemp())
+                try:
+                    dst = tmp_dir / "SEEBECK.DAT"
+                    with calc.outputs.retrieved.open("SEEBECK.DAT", "rb") as src, open(dst, "wb") as out:
+                        shutil.copyfileobj(src, out)
+                    avg_s, _components, temperature, mu = parse_seebeck_first_line(str(dst))
+                    summary["seebeck_coefficient_uvk"] = avg_s * 1e6
+                    summary["mu_ev"] = mu
+                    summary["temperature_k"] = temperature
+                finally:
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+            seebeck_count += 1
+            if seebeck_count % 25 == 0:
+                print(f"  Crystal seebeck: {seebeck_count}/{len(crystal_uuids)}")
 
 
 def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[str]) -> None:
@@ -510,7 +731,10 @@ def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[
 
 
 _SUMMARY_CSV_COLUMNS = [
-    "duration", "bandgap", "a", "b", "c", "alpha", "beta", "gamma",
+    "duration", "bandgap",
+    "has_phonons", "phonon_freq_min", "phonon_freq_max",
+    "phonon_n_imag", "phonon_modes_count",
+    "a", "b", "c", "alpha", "beta", "gamma",
     "chemical_formula", "sum_sq_disp", "rmsd_disp", "output_path",
     "engine", "calc_type", "calc_date", "uuid",
     "seebeck_coefficient_uvk", "mu_ev", "temperature_k",
@@ -561,7 +785,7 @@ def save_aiida_reports(
                 continue
 
         if flat_summary:
-            df = pl.DataFrame(flat_summary)
+            df = pl.DataFrame(flat_summary, infer_schema_length=len(flat_summary))
             ordered_cols = [c for c in _SUMMARY_CSV_COLUMNS if c in df.columns]
             remaining_cols = [c for c in df.columns if c not in _SUMMARY_CSV_COLUMNS]
             df = df.select(ordered_cols + remaining_cols)
@@ -631,11 +855,22 @@ def generate_aiida_reports(
     to_date: str | None = None,
     skip_errors: bool = False,
     output_dir: str | Path = "/tmp",
+    calc_type: str | None = None,
+    engine: str | None = None,
 ) -> None:
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
 
     Convenience function that combines scan_aiida_calculations() and save_aiida_reports().
+
+    Parameters:
+    - calc_type: If set (e.g. 'phonon', 'transport', 'scf'), only keep rows whose
+      ``calc_type`` matches. Note that ``calc_type`` is refined during enrichment
+      (e.g. ``scf`` with ``SEEBECK.DAT`` becomes ``transport``), so filtering is
+      applied after the full scan.
+    - engine: If set ('crystal' or 'fleur'), only query calcs of that engine
+      (avoids fetching the other engine entirely — much faster for crystal-only
+      reports).
     """
     print("\n" + "=" * 60)
     print("GENERATING REPORTS FROM AiiDA DATABASE")
@@ -646,7 +881,24 @@ def generate_aiida_reports(
         from_date=from_date,
         to_date=to_date,
         skip_errors=skip_errors,
+        calc_type_filter=calc_type,
+        engine=engine,
     )
+
+    if calc_type and calc_type != "transport" and summary_store:
+        before = len(summary_store)
+        summary_store = [s for s in summary_store if s.get("calc_type") == calc_type]
+        print(f"Filtering calc_type={calc_type!r}: {before} -> {len(summary_store)} rows")
+
+    if summary_store:
+        empty_transport = [s for s in summary_store
+                           if s.get("calc_type") == "transport"
+                           and s.get("seebeck_coefficient_uvk") is None]
+        if empty_transport:
+            print(f"Dropping {len(empty_transport)} transport calcs with empty Seebeck (exit_status=0 but no data)")
+            summary_store = [s for s in summary_store
+                             if not (s.get("calc_type") == "transport"
+                                     and s.get("seebeck_coefficient_uvk") is None)]
 
     if not summary_store:
         print("No calculations found for the given criteria.")
