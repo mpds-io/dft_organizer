@@ -49,7 +49,15 @@ from dft_organizer.aiida.reporting import generate_aiida_reports
     default=None,
     help="Only include calculations of this engine (crystal or fleur). Use 'crystal' for crystal-only reports (much faster — skips FLEUR enrichment)."
 )
-def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine):
+@click.option(
+    "--max-duration",
+    type=float,
+    default=200.0,
+    show_default=True,
+    metavar="HOURS",
+    help="Drop calculations with wall-clock duration above this threshold (filters out stalled calcs with inflated mtime-ctime). Set to 0 to disable."
+)
+def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine, max_duration):
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
 
@@ -65,6 +73,7 @@ def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine):
         output_dir=output_dir,
         calc_type=calc_type,
         engine=engine,
+        max_duration=max_duration,
     )
 
 

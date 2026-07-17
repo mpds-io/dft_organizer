@@ -857,6 +857,7 @@ def generate_aiida_reports(
     output_dir: str | Path = "/tmp",
     calc_type: str | None = None,
     engine: str | None = None,
+    max_duration: float | None = None,
 ) -> None:
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
@@ -871,6 +872,9 @@ def generate_aiida_reports(
     - engine: If set ('crystal' or 'fleur'), only query calcs of that engine
       (avoids fetching the other engine entirely — much faster for crystal-only
       reports).
+    - max_duration: Drop calculations with wall-clock duration (hours) above this
+      threshold. Filters out stalled calcs with inflated ``mtime - ctime``.
+      Set to 0 or None to disable. Default 200h via CLI.
     """
     print("\n" + "=" * 60)
     print("GENERATING REPORTS FROM AiiDA DATABASE")
@@ -899,6 +903,14 @@ def generate_aiida_reports(
             summary_store = [s for s in summary_store
                              if not (s.get("calc_type") == "transport"
                                      and s.get("seebeck_coefficient_uvk") is None)]
+
+    if max_duration and max_duration > 0 and summary_store:
+        before = len(summary_store)
+        summary_store = [s for s in summary_store
+                         if s.get("duration") is None or s["duration"] <= max_duration]
+        dropped = before - len(summary_store)
+        if dropped:
+            print(f"Dropping {dropped} calcs with duration > {max_duration}h (likely stalled)")
 
     if not summary_store:
         print("No calculations found for the given criteria.")
