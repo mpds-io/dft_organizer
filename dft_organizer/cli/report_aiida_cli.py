@@ -57,7 +57,13 @@ from dft_organizer.aiida.reporting import generate_aiida_reports
     metavar="HOURS",
     help="Drop calculations with wall-clock duration above this threshold (filters out stalled calcs with inflated mtime-ctime). Set to 0 to disable."
 )
-def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine, max_duration):
+@click.option(
+    "--skip-displacement",
+    is_flag=True,
+    default=False,
+    help="Skip FLEUR displacement enrichment (slow pg8000 DB queries). FLEUR calc_type will stay 'scf' instead of being reclassified to 'optimise'."
+)
+def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine, max_duration, skip_displacement):
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
 
@@ -74,6 +80,7 @@ def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine, m
         calc_type=calc_type,
         engine=engine,
         max_duration=max_duration,
+        skip_displacement=skip_displacement,
     )
 
 

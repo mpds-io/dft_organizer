@@ -131,8 +131,8 @@ def _fetch_fleur_seebeck(calc) -> dict | None:
         ptype = getattr(node, 'process_type', '') or ''
         if 'FleurDOSLocalWorkChain' in ptype:
             try:
-                sd = node.outputs.output_seebeck.get_dict()
-                pd = node.outputs.output_dos_local_wc_para.get_dict()
+                sd = node.outputs.output_seebeck.base.attributes.all
+                pd = node.outputs.output_dos_local_wc_para.base.attributes.all
                 return {
                     "seebeck_coefficient_uvk": sd.get("seebeck_coefficient_uvk"),
                     "mu_ev": sd.get("mu_ev"),

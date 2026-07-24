@@ -40,8 +40,8 @@ def _fetch_fleur_seebeck(calc) -> dict | None:
         ptype = getattr(node, 'process_type', '') or ''
         if 'FleurDOSLocalWorkChain' in ptype:
             try:
-                sd = node.outputs.output_seebeck.get_dict()
-                pd = node.outputs.output_dos_local_wc_para.get_dict()
+                sd = node.outputs.output_seebeck.base.attributes.all
+                pd = node.outputs.output_dos_local_wc_para.base.attributes.all
                 return {
                     "seebeck_coefficient_uvk": sd.get("seebeck_coefficient_uvk"),
                     "mu_ev": sd.get("mu_ev"),
@@ -297,6 +297,7 @@ _null_summary_keys = [
     "cost_eur", "hetzner_rate",
     "has_phonons", "phonon_freq_min", "phonon_freq_max",
     "phonon_n_imag", "phonon_modes_count",
+    "total_energy", "fermi_energy", "magnetic_moment", "n_iterations",
 ]
 
 
@@ -307,6 +308,7 @@ def scan_aiida_calculations(
     skip_errors: bool = False,
     calc_type_filter: str | None = None,
     engine: str | None = None,
+    skip_displacement: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Query AiiDA CalcJobNodes and build a summary store for reporting.
@@ -363,6 +365,10 @@ def scan_aiida_calculations(
 
         engine = _engine_from_process_type(process_type) or 'unknown'
 
+        # Skip fleur.inpgen (input generator, no calculation results)
+        if 'inpgen' in (process_type or ''):
+            continue
+
         # Pre-filter by label-based calc_type to skip expensive enrichment.
         # transport is kept (scf rows may become transport via SEEBECK.DAT).
         if calc_type_filter and calc_type_filter != 'transport':
@@ -411,7 +417,7 @@ def scan_aiida_calculations(
 
     if fleur_uuids:
         print(f"Enriching {len(fleur_uuids)} FLEUR calculations (Seebeck, displacement)...")
-        _enrich_fleur_extras(summary_store, fleur_uuids)
+        _enrich_fleur_extras(summary_store, fleur_uuids, skip_displacement=skip_displacement)
 
     return summary_store
 
@@ -683,7 +689,7 @@ def _enrich_crystal_extras(summary_store: list[dict[str, Any]], crystal_uuids: l
                 print(f"  Crystal seebeck: {seebeck_count}/{len(crystal_uuids)}")
 
 
-def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[str]) -> None:
+def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[str], skip_displacement: bool = False) -> None:
     uuid_to_idx = {s['uuid']: i for i, s in enumerate(summary_store) if s.get('uuid') in set(fleur_uuids)}
 
     print(f"Fetching Seebeck data for {len(fleur_uuids)} FLEUR calcs...")
@@ -700,27 +706,64 @@ def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[
         if done % 25 == 0:
             print(f"  Seebeck: {done}/{len(fleur_uuids)}")
 
-    try:
-        db_cfg = load_db_config()
-        conn = pg8000.connect(**db_cfg)
-        print(f"Fetching displacement data for {len(fleur_uuids)} FLEUR calcs...")
-        done = 0
+    print(f"Fetching output_parameters for {len(fleur_uuids)} FLEUR calcs...")
+    done = 0
+    for uuid in fleur_uuids:
+        idx = uuid_to_idx.get(uuid)
+        if idx is None:
+            continue
+        summary = summary_store[idx]
         try:
-            for uuid in fleur_uuids:
+            calc = load_node(uuid)
+            op = calc.outputs.output_parameters.base.attributes.all
+            if "bandgap" in op:
+                summary["bandgap"] = op["bandgap"]
+            if "energy" in op:
+                summary["total_energy"] = op["energy"]
+            if "fermi_energy" in op:
                 try:
-                    calc = load_node(uuid)
-                    disp = _get_fleur_displacement(calc, conn)
-                    if uuid in uuid_to_idx:
-                        summary_store[uuid_to_idx[uuid]].update(disp)
-                except Exception:
+                    summary["fermi_energy"] = round(float(op["fermi_energy"]) * 27.2114, 6)
+                except (TypeError, ValueError):
                     pass
-                done += 1
-                if done % 25 == 0:
-                    print(f"  Displacement: {done}/{len(fleur_uuids)}")
-        finally:
-            conn.close()
-    except Exception:
-        print("  Skipping displacement data (DB connection failed)")
+            spins = op.get("spin_dependent_charge_total")
+            if spins and isinstance(spins, list) and len(spins) == 2:
+                try:
+                    summary["magnetic_moment"] = round(abs(float(spins[0]) - float(spins[1])), 4)
+                except (TypeError, ValueError):
+                    pass
+            if "number_of_iterations_total" in op:
+                try:
+                    summary["n_iterations"] = int(op["number_of_iterations_total"])
+                except (TypeError, ValueError):
+                    pass
+        except Exception:
+            pass
+        done += 1
+        if done % 25 == 0:
+            print(f"  output_parameters: {done}/{len(fleur_uuids)}")
+
+    if not skip_displacement:
+        try:
+            db_cfg = load_db_config()
+            conn = pg8000.connect(**db_cfg)
+            print(f"Fetching displacement data for {len(fleur_uuids)} FLEUR calcs...")
+            done = 0
+            try:
+                for uuid in fleur_uuids:
+                    try:
+                        calc = load_node(uuid)
+                        disp = _get_fleur_displacement(calc, conn)
+                        if uuid in uuid_to_idx:
+                            summary_store[uuid_to_idx[uuid]].update(disp)
+                    except Exception:
+                        pass
+                    done += 1
+                    if done % 25 == 0:
+                        print(f"  Displacement: {done}/{len(fleur_uuids)}")
+            finally:
+                conn.close()
+        except Exception:
+            print("  Skipping displacement data (DB connection failed)")
 
     import math
     for summary in summary_store:
@@ -731,7 +774,8 @@ def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[
 
 
 _SUMMARY_CSV_COLUMNS = [
-    "duration", "bandgap",
+    "duration", "bandgap", "total_energy", "fermi_energy",
+    "magnetic_moment", "n_iterations",
     "has_phonons", "phonon_freq_min", "phonon_freq_max",
     "phonon_n_imag", "phonon_modes_count",
     "a", "b", "c", "alpha", "beta", "gamma",
@@ -858,6 +902,7 @@ def generate_aiida_reports(
     calc_type: str | None = None,
     engine: str | None = None,
     max_duration: float | None = None,
+    skip_displacement: bool = False,
 ) -> None:
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
@@ -887,6 +932,7 @@ def generate_aiida_reports(
         skip_errors=skip_errors,
         calc_type_filter=calc_type,
         engine=engine,
+        skip_displacement=skip_displacement,
     )
 
     if calc_type and calc_type != "transport" and summary_store:

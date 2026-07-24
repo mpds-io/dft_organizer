@@ -79,3 +79,10 @@
 - [x] 10.8 Fix formula/space_group enrichment fallbacks: read `mpds_query` Dict, `crystal_calc_uuid` Str → SCF → StructureData, and workchain labels (`Co2As/189 Seebeck direct`) for calcs without a direct StructureData link
 - [x] 10.9 Fix polars schema-inference error on mixed bool/None `has_phonons` column (`infer_schema_length`)
 - [x] 10.10 Verify on real AiiDA data: 75 CRYSTAL calcs → 57 after dropping silent-failed transport; 0 null formulas; phonon frequencies and Seebeck populated
+
+## 11. Duration filter (additional)
+
+- [x] 11.1 Add `--max-duration HOURS` CLI flag to `dft-report-aiida` (default 200h, set to 0 to disable)
+- [x] 11.2 In `generate_aiida_reports`, after enrichment, drop calcs with `duration > max_duration` (stalled calcs with inflated `mtime - ctime`); preserve `duration is None` rows
+- [x] 11.3 Test: 147 CRYSTAL calcs (Oct–Dec 2025) → 47 stalled phonon calcs >200h dropped → 100 rows remain (max 181h)
+- [x] 11.4 Update README with `--max-duration` documentation

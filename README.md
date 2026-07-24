@@ -75,19 +75,90 @@ Creates under parent directory:
 
 ### Generate reports from AiiDA database (no archiving)
 
-dft-report-aiida [--label LABEL] [--from-date YYYY-MM-DD] [--to-date YYYY-MM-DD] [--calc-type TYPE] [--skip-errors] [--output-dir DIR]
+dft-report-aiida [--label LABEL] [--from-date YYYY-MM-DD] [--to-date YYYY-MM-DD] [--calc-type TYPE] [--skip-errors] [--engine ENGINE] [--max-duration HOURS] [--skip-displacement] [--output-dir DIR]
 
-- `--label`        Filter by calculation label (exact match)
-- `--from-date`    Only include calculations created on or after this date
-- `--to-date`      Only include calculations created on or before this date
-- `--calc-type`    Only include calculations of this type, e.g. `phonon`, `transport`, `elastic`, `electron`, `optimise`, `scf`, `struct`, `hform`. Filtering is applied after enrichment (so `scf` rows reclassified to `transport` via `SEEBECK.DAT` are kept by `--calc-type transport`).
-- `--skip-errors`  Skip calculations with exit_status != 0
-- `--output-dir`   Directory to save reports (default `/tmp`)
+- `--label`             Filter by calculation label (exact match)
+- `--from-date`         Only include calculations created on or after this date
+- `--to-date`           Only include calculations created on or before this date
+- `--calc-type`         Only include calculations of this type, e.g. `phonon`, `transport`, `elastic`, `electron`, `optimise`, `scf`, `struct`, `hform`. Filtering is applied after enrichment (so `scf` rows reclassified to `transport` via `SEEBECK.DAT` are kept by `--calc-type transport`).
+- `--skip-errors`       Skip calculations with exit_status != 0
+- `--engine`            Only include calculations of this engine (`crystal` or `fleur`). Use `crystal` for crystal-only reports (much faster — skips FLEUR enrichment).
+- `--max-duration`      Drop calculations with wall-clock duration above this threshold in hours (filters out stalled calcs with inflated `mtime - ctime`). Default 200h; set to 0 to disable.
+- `--skip-displacement` Skip FLEUR displacement enrichment (slow pg8000 DB queries). FLEUR `calc_type` stays `scf` instead of being reclassified to `optimise`. Recommended for fast reports.
+- `--output-dir`        Directory to save reports (default `/tmp`)
 
 Creates:
 - `summary_<timestamp>.csv`
 - `summary_<timestamp>.json`
 - `report_crystal_<timestamp>.txt` / `report_fleur_<timestamp>.txt` (only if errors found)
+
+
+### FLEUR reports from AiiDA database
+
+FLEUR calculations in the AiiDA database include SCF runs (`scf: fleur run N`) and Seebeck-DOS runs (`<material> : Seebeck coefficient calculation from DOS (Fleur) - DOS`). Input-generator calculations (`fleur.inpgen`) are automatically excluded — they have no results.
+
+The `--skip-displacement` flag is recommended for FLEUR reports: it skips the slow `pg8000` direct-DB displacement computation (which compares initial and final structures to classify `scf` vs `optimise`). Without it, `calc_type` may be reclassified from `scf` to `optimise` for geometry-optimization runs; with it, all FLEUR rows stay `scf`.
+
+**All FLEUR calculations (fast, no displacement):**
+```bash
+dft-report-aiida --engine fleur --skip-errors --skip-displacement --from-date 2026-04-01 --output-dir ./reports/aiida_db
+```
+
+**Only Seebeck / transport calculations:**
+```bash
+dft-report-aiida --engine fleur --skip-errors --skip-displacement --calc-type transport --from-date 2026-04-30 --to-date 2026-06-26 --output-dir ./reports/aiida_db
+```
+
+**Only SCF calculations (with bandgap, total energy, magnetic moment):**
+```bash
+dft-report-aiida --engine fleur --skip-errors --skip-displacement --calc-type scf --from-date 2026-04-01 --output-dir ./reports/aiida_db
+```
+
+**All FLEUR with displacement (slow, reclassifies scf→optimise):**
+```bash
+dft-report-aiida --engine fleur --skip-errors --from-date 2026-04-01 --output-dir ./reports/aiida_db
+```
+
+**Include stalled calcs (no duration filter):**
+```bash
+dft-report-aiida --engine fleur --skip-errors --skip-displacement --max-duration 0 --from-date 2026-04-01 --output-dir ./reports/aiida_db
+```
+
+FLEUR Seebeck-DOS calculations have labels like `AlAs : Seebeck coefficient calculation from DOS (Fleur) - DOS` and were run between 2026-04-30 and 2026-06-26 (92 calculations). The `output_parameters` port provides `bandgap`, `total_energy`, `fermi_energy`, `magnetic_moment`, and `n_iterations` for all successful `fleur.fleur` calcs. Seebeck data (`seebeck_coefficient_uvk`, `mu_ev`, `temperature_k`) is populated only for Seebeck-DOS calcs.
+
+
+### CRYSTAL reports from AiiDA database
+
+CRYSTAL calculations in the AiiDA database include SCF runs, geometry optimizations (`<material>: Geometry optimization [N]`), phonon calculations (`<material>: Phonon frequencies [N]`), elastic constants, and transport/Seebeck runs. The `--engine crystal` flag queries only CRYSTAL CalcJobNodes — no `pg8000` displacement is needed, so `--skip-displacement` is not required.
+
+**All CRYSTAL calculations (fast):**
+```bash
+dft-report-aiida --engine crystal --skip-errors --from-date 2026-06-01 --output-dir ./reports/aiida_db
+```
+
+**Only phonon calculations (with frequencies parsed from OUTPUT):**
+```bash
+dft-report-aiida --engine crystal --skip-errors --calc-type phonon --from-date 2026-06-01 --output-dir ./reports/aiida_db
+```
+
+**Only transport / Seebeck calculations:**
+```bash
+dft-report-aiida --engine crystal --skip-errors --calc-type transport --from-date 2026-06-01 --output-dir ./reports/aiida_db
+```
+
+**Only geometry optimization:**
+```bash
+dft-report-aiida --engine crystal --skip-errors --calc-type optimise --from-date 2026-06-01 --output-dir ./reports/aiida_db
+```
+
+**All CRYSTAL including stalled calcs (no duration filter):**
+```bash
+dft-report-aiida --engine crystal --skip-errors --max-duration 0 --from-date 2025-10-01 --output-dir ./reports/aiida_db
+```
+
+The `--max-duration 200` (default) filters out stalled phonon calculations with inflated `mtime - ctime` (some show durations of 6000+ hours / 250+ days, which is a measurement artifact, not real compute time). Set `--max-duration 0` to include them.
+
+Phonon frequencies are parsed from the `MODES ... FREQUENCIES (CM**-1) (THZ)` block in the retrieved `OUTPUT` file. Seebeck data is parsed from `SEEBECK.DAT` in the retrieved repository. Silent-failed transport calcs (`exit_status=0` but `SEEBECK.DAT` contains only a header, no data) are automatically dropped from the summary.
 
 
 ## Python API
@@ -151,10 +222,10 @@ Output files:
 
 ## CSV Summary Fields
 
-- `total_energy`        Total energy in eV (from CRYSTAL `energy`).
+- `total_energy`        Total energy in eV (from CRYSTAL `energy`; for FLEUR, from `output_parameters.energy`).
 - `energy_hartree`      Total energy converted to Hartree (`total_energy / 27.2114`).
-- `bandgap`             Band gap value from the last conduction entry (if available).
-- `duration`            Calculation wall-clock time (if reported by CRYSTAL).
+- `bandgap`             Band gap value in eV. For CRYSTAL, from the last conduction entry; for FLEUR, from `output_parameters` (AiiDA-DB mode).
+- `duration`            Calculation wall-clock time in hours (if reported by CRYSTAL; for FLEUR/AiiDA-DB, computed as `mtime - ctime`).
 - `a`, `b`, `c`         Lattice parameters in Å for the final structure.
 - `alpha`, `beta`, `gamma`  Lattice angles in degrees for the final structure.
 - `chemical_formula`    Reduced chemical formula of the final structure (from ASE).
@@ -168,7 +239,10 @@ Output files:
 - `phonon_freq_max`     Maximum phonon frequency in THz across all q-points.
 - `phonon_n_imag`       Number of imaginary (unstable) phonon modes (THz < -1e-3).
 - `phonon_modes_count`  Number of modes at the first q-point.
-- `seebeck_coefficient_uvk`  Average Seebeck coefficient in µV/K. For CRYSTAL, parsed from `SEEBECK.DAT` (transport calcs); for FLEUR, from `FleurDOSLocalWorkChain` outputs.
+- `fermi_energy`        Fermi energy in eV. For FLEUR (AiiDA-DB mode), converted from Hartree (`*27.2114`).
+- `magnetic_moment`     Magnetic moment in μB. For FLEUR (AiiDA-DB mode), computed from `spin_dependent_charge_total` (difference between spin-up and spin-down charges).
+- `n_iterations`        Number of SCF iterations. For FLEUR (AiiDA-DB mode), from `output_parameters.number_of_iterations_total`.
+- `seebeck_coefficient_uvk`  Average Seebeck coefficient in µV/K. For CRYSTAL, parsed from `SEEBECK.DAT` (transport calcs); for FLEUR, from `FleurDOSLocalWorkChain` `output_seebeck` (already in µV/K).
 - `mu_ev`               Chemical potential. For CRYSTAL, in Hartree (from `SEEBECK.DAT`); for FLEUR, in eV. Note: units differ between engines.
 - `temperature_k`       Temperature in Kelvin at which Seebeck was computed.
 
