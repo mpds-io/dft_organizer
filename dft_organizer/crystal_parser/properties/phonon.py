@@ -126,10 +126,16 @@ def _parse_phonon_dat(path: Path) -> dict | None:
     if not all_freqs_thz:
         return None
 
+    import statistics
+    freq_mean = statistics.fmean(all_freqs_thz) if len(all_freqs_thz) > 0 else 0.0
+    freq_std = statistics.pstdev(all_freqs_thz) if len(all_freqs_thz) > 1 else 0.0
+
     return {
         "has_phonons": True,
         "phonon_freq_min": round(min(all_freqs_thz), 6),
         "phonon_freq_max": round(max(all_freqs_thz), 6),
+        "phonon_freq_mean": round(freq_mean, 6),
+        "phonon_freq_std": round(freq_std, 6),
         "phonon_n_imag": n_imag,
         "phonon_modes_count": n_modes,
         "frequency_unit": "THz",
@@ -230,10 +236,16 @@ def parse_phonon_from_output(text: str) -> dict | None:
     if not all_freqs_thz:
         return None
 
+    import statistics
+    freq_mean = statistics.fmean(all_freqs_thz) if len(all_freqs_thz) > 0 else 0.0
+    freq_std = statistics.pstdev(all_freqs_thz) if len(all_freqs_thz) > 1 else 0.0
+
     return {
         "has_phonons": True,
         "phonon_freq_min": round(min(all_freqs_thz), 6),
         "phonon_freq_max": round(max(all_freqs_thz), 6),
+        "phonon_freq_mean": round(freq_mean, 6),
+        "phonon_freq_std": round(freq_std, 6),
         "phonon_n_imag": n_imag,
         "phonon_modes_count": n_modes,
         "frequency_unit": "THz",

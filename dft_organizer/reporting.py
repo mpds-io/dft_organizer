@@ -13,7 +13,9 @@ import pg8000
 import numpy as np
 
 from dft_organizer.aiida_utils import extract_uuid_from_path
+from dft_organizer.structures import get_space_group_robust, nullify_right_angles
 from dft_organizer.utils import detect_engine, get_table_string
+from dft_organizer.aiida.reporting import _extract_mpds_id_from_provenance
 from dft_organizer.pricing import get_cloud_rate, get_cost
 from dft_organizer.crystal_parser import (
     parse_crystal_output,
@@ -83,6 +85,7 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
         summary["space_group"] = None
         summary["cost_eur"] = None
         summary["calc_date"] = None
+        summary["mpds_id"] = None
 
         try:
             calc = load_node(calc_uuid)
@@ -95,14 +98,20 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
         try:
             struct = calc.inputs.structure
             ase_atoms = struct.get_ase()
-            import spglib
-            dataset = spglib.get_symmetry_dataset((
+            sg = get_space_group_robust(
                 ase_atoms.cell,
                 ase_atoms.positions,
                 ase_atoms.get_atomic_numbers(),
-            ))
-            if dataset is not None:
-                summary["space_group"] = dataset.number
+            )
+            if sg is not None:
+                summary["space_group"] = sg
+        except Exception:
+            pass
+
+        try:
+            mpds_id = _extract_mpds_id_from_provenance(calc)
+            if mpds_id:
+                summary["mpds_id"] = mpds_id
         except Exception:
             pass
 
@@ -226,6 +235,8 @@ def _enrich_summary_with_phonons(
     summary.setdefault("has_phonons", False)
     summary.setdefault("phonon_freq_min", None)
     summary.setdefault("phonon_freq_max", None)
+    summary.setdefault("phonon_freq_mean", None)
+    summary.setdefault("phonon_freq_std", None)
     summary.setdefault("phonon_n_imag", None)
     summary.setdefault("phonon_modes_count", None)
 
@@ -254,6 +265,8 @@ def _enrich_summary_with_phonons(
     summary["has_phonons"] = parsed.get("has_phonons", False)
     summary["phonon_freq_min"] = parsed.get("phonon_freq_min")
     summary["phonon_freq_max"] = parsed.get("phonon_freq_max")
+    summary["phonon_freq_mean"] = parsed.get("phonon_freq_mean")
+    summary["phonon_freq_std"] = parsed.get("phonon_freq_std")
     summary["phonon_n_imag"] = parsed.get("phonon_n_imag")
     summary["phonon_modes_count"] = parsed.get("phonon_modes_count")
 
@@ -472,6 +485,23 @@ def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
     raise FileNotFoundError(f"Calculation with UUID {uuid} not found in {root_path}")
 
 
+def _passes_strict_filter(summary: dict) -> bool:
+    """Strict inclusion filter for the CSV table.
+
+    Drops a calculation when:
+    - ``exit_status`` is present and non-zero (failed calc), or
+    - ``chemical_formula`` is missing/empty (no usable structure).
+
+    Dropped rows stay in the JSON dump and error reports for audit.
+    """
+    es = summary.get("exit_status")
+    if es is not None and es != 0:
+        return False
+    if not summary.get("chemical_formula"):
+        return False
+    return True
+
+
 def save_reports(
     root_path: Path,
     summary_store: list[dict],
@@ -479,6 +509,7 @@ def save_reports(
     error_dict_fleur: dict,
     phonon_store: list[dict] | None = None,
     output_dir: Path | None = None,
+    strict_filter: bool = True,
 ) -> None:
     time_now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     save_dir = Path(output_dir) if output_dir else root_path.parent
@@ -491,37 +522,59 @@ def save_reports(
         return json.dumps(v)
 
     if summary_store:
-        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols", "bandgap", "space_group", "q_point"]
-        _DROP_KEYS = {
-            "techs_1_FMIXING", "techs_2", "optgeom", "num_opt_cycles",
-            "MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK",
-            "t1", "t5", "k", "H", "smear", "spin", "TOLINTEG",
-        }
-        flat_summary = []
+        # JSON keeps the full nested structure (cell, positions, ...) for audit.
+        json_path = save_dir / f"summary_{time_now}.json"
+        with open(json_path, "w") as f:
+            json.dump(summary_store, f, indent=2, default=str)
+        print(f"Summary JSON saved to: {json_path}")
 
-        for row in summary_store:
-            try:
-                row = dict(row)
-                for dk in _DROP_KEYS:
-                    row.pop(dk, None)
-                for k in nested_keys:
-                    if k in row:
-                        try:
-                            row[k] = _serialize_nested(row[k])
-                        except Exception:
-                            row[k] = None
-                flat_summary.append(row)
-            except Exception:
-                continue
+        if strict_filter:
+            before = len(summary_store)
+            csv_store = [s for s in summary_store if _passes_strict_filter(s)]
+            dropped = before - len(csv_store)
+            if dropped:
+                print(f"Strict filter: dropped {dropped} rows (no formula or exit_status != 0) from CSV")
+        else:
+            csv_store = list(summary_store)
 
-        if flat_summary:
-            df = pl.DataFrame(flat_summary)
-            df.write_csv(save_dir / f"summary_{time_now}.csv")
+        if not csv_store:
+            print("No rows passed the strict filter; CSV not written.")
+        else:
+            # CSV: drop verbose/redundant keys (kept in JSON for audit).
+            # cell -> a,b,c,alpha,beta,gamma columns; numbers/symbols ->
+            # composition_n_atoms; positions too verbose.
+            _CSV_NESTED = ["pbc", "bandgap", "space_group", "q_point"]
+            _CSV_DROP_KEYS = {
+                "techs_1_FMIXING", "techs_2", "optgeom", "num_opt_cycles",
+                "MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK",
+                "t1", "t5", "k", "H", "smear", "spin", "TOLINTEG",
+                "positions", "cell", "numbers", "symbols",
+            }
+            flat_summary = []
+            for row in csv_store:
+                try:
+                    row = dict(row)
+                    for dk in _CSV_DROP_KEYS:
+                        row.pop(dk, None)
+                    nullify_right_angles(row)
+                    for k in _CSV_NESTED:
+                        if k in row:
+                            try:
+                                row[k] = _serialize_nested(row[k])
+                            except Exception:
+                                row[k] = None
+                    flat_summary.append(row)
+                except Exception:
+                    continue
 
-            json_path = save_dir / f"summary_{time_now}.json"
-            with open(json_path, "w") as f:
-                json.dump(flat_summary, f, indent=2, default=str)
-            print(f"Summary JSON saved to: {json_path}")
+            if flat_summary:
+                df = pl.DataFrame(flat_summary)
+                _drop_cols = {"positions", "cell", "numbers", "symbols"}
+                df = df.drop(
+                    [col for col in df.columns if col in _drop_cols or df[col].null_count() == df.height]
+                )
+                df.write_csv(save_dir / f"summary_{time_now}.csv")
+                print(f"Summary CSV saved to: {save_dir / f'summary_{time_now}.csv'}")
 
     if phonon_store:
         phonon_flat: list[dict] = []
@@ -642,7 +695,7 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
         return None
 
 
-def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "all", output_dir: Path | None = None, engine_type: str | None = None, from_date: str | None = None) -> None:
+def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "all", output_dir: Path | None = None, engine_type: str | None = None, from_date: str | None = None, strict_filter: bool = True) -> None:
     """
     Scan a calculation tree, print a short summary to stdout
     and save a summary CSV plus error reports.
@@ -652,6 +705,8 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
     - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
     - engine_type: Filter by engine: None (all), "crystal", or "fleur".
     - from_date: Only include calculations modified on or after this date (YYYY-MM-DD).
+    - strict_filter: When True (default), drop rows with exit_status != 0 or no
+      chemical_formula from the CSV only (JSON keeps everything).
     """
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
@@ -681,7 +736,7 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
             if s.get("calc_date") and datetime.strptime(s["calc_date"], "%Y-%m-%d %H:%M:%S") >= cutoff
         ]
 
-    save_reports(root_path, summary_store, err_cr, err_fl, phonon_store=phonon_store, output_dir=save_dir)
+    save_reports(root_path, summary_store, err_cr, err_fl, phonon_store=phonon_store, output_dir=save_dir, strict_filter=strict_filter)
 
     print("\n" + "=" * 60)
     print("REPORTS GENERATION COMPLETE")

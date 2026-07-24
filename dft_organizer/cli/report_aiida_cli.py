@@ -63,7 +63,13 @@ from dft_organizer.aiida.reporting import generate_aiida_reports
     default=False,
     help="Skip FLEUR displacement enrichment (slow pg8000 DB queries). FLEUR calc_type will stay 'scf' instead of being reclassified to 'optimise'."
 )
-def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine, max_duration, skip_displacement):
+@click.option(
+    "--no-strict-filter",
+    is_flag=True,
+    default=False,
+    help="Disable the strict CSV filter (by default, rows with exit_status != 0 or no chemical_formula are dropped from the CSV; JSON keeps everything)."
+)
+def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine, max_duration, skip_displacement, no_strict_filter):
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
 
@@ -81,6 +87,7 @@ def cli(label, output_dir, from_date, to_date, calc_type, skip_errors, engine, m
         engine=engine,
         max_duration=max_duration,
         skip_displacement=skip_displacement,
+        strict_filter=not no_strict_filter,
     )
 
 

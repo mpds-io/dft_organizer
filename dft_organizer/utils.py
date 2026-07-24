@@ -3,6 +3,11 @@ import polars as pl
 from dft_organizer.crystal_parser import parse_crystal_output
 from dft_organizer.fleur_parser import parse_fleur_output
 from dft_organizer.fmt import detect_calculation_code
+from dft_organizer.structures import (  # noqa: F401  (re-exported for back-compat)
+    get_space_group_robust,
+    composition_n_atoms,
+    format_cell_compact,
+)
 
 
 def get_table_string(res: dict) -> str:

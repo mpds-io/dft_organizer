@@ -8,6 +8,7 @@ from ase.geometry import cell_to_cellpar
 
 from dft_organizer.ase_utils import get_formula
 from dft_organizer.crystal_parser.parse_properties import parse_seebeck_first_line
+from dft_organizer.structures import get_space_group_robust
 
 
 def count_optimization_cycles(filename):
@@ -229,6 +230,11 @@ def _parse_properties_only(path: Path) -> dict:
                 f"{s}{'' if (counts[s] // g) == 1 else str(counts[s] // g)}"
                 for s in ordered
             )
+            results["n_atoms"] = len(normalized)
+            results["composition_n_atoms"] = (
+                f"{results['chemical_formula']}|{results['n_atoms']}"
+                if results["chemical_formula"] else ""
+            )
 
     vec_block = re.search(
         r"DIRECT LATTICE VECTOR COMPONENTS \(ANGSTROM\)\s*\n"
@@ -392,13 +398,17 @@ def parse_crystal_output(path: Path) -> dict:
             results["beta"] = round(float(beta), 2)
             results["gamma"] = round(float(gamma), 2)
             results["chemical_formula"] = get_formula(ase_obj, find_gcd=True)
+            results["n_atoms"] = len(ase_obj)
+            results["composition_n_atoms"] = (
+                f"{results['chemical_formula']}|{results['n_atoms']}"
+                if results["chemical_formula"] else ""
+            )
             try:
-                import spglib
-                dataset = spglib.get_symmetry_dataset((
+                sg = get_space_group_robust(
                     ase_obj.get_cell(), ase_obj.get_positions(), ase_obj.get_atomic_numbers(),
-                ))
-                if dataset is not None:
-                    results["space_group"] = dataset.number
+                )
+                if sg is not None:
+                    results["space_group"] = sg
             except Exception:
                 pass
         else:

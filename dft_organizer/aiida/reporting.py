@@ -19,6 +19,7 @@ from dft_organizer.aiida.aiida_links_tree import (
 from dft_organizer.aiida.export import determine_calc_type_summary
 from dft_organizer.crystal_parser import parse_phonon_from_output
 from dft_organizer.crystal_parser.parse_properties import parse_seebeck_first_line
+from dft_organizer.structures import get_space_group_robust, nullify_right_angles
 
 
 _aiida_loaded = False
@@ -157,15 +158,14 @@ def _sgs_from_workchain_label(label: str | None) -> int | None:
         return None
 
 
-def _apply_struct_attrs_to_summary(summary: dict, struct_attrs: dict) -> None:
-    """Fill formula / cell / space_group into summary from StructureData attributes."""
-    struct_info = _extract_struct_info(struct_attrs)
-    for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
-              "cell", "positions", "numbers", "symbols"):
-        if struct_info.get(k) is not None:
-            summary[k] = struct_info[k]
+def _spglib_from_attrs(struct_attrs: dict) -> int | None:
+    """Compute space-group number from AiiDA StructureData attributes via spglib.
+
+    Uses the tolerant :func:`get_space_group_robust` helper (standardize +
+    looser symprec fallback) so that ``space_group`` is populated more often
+    than with a single ``get_symmetry_dataset`` call.
+    """
     try:
-        import spglib
         cell = struct_attrs.get('cell')
         kinds = struct_attrs.get('kinds', [])
         sites = struct_attrs.get('sites', [])
@@ -175,11 +175,23 @@ def _apply_struct_attrs_to_summary(summary: dict, struct_attrs: dict) -> None:
         numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
         positions = [s.get('position', [0, 0, 0]) for s in sites]
         if cell and numbers:
-            dataset = spglib.get_symmetry_dataset((cell, positions, numbers))
-            if dataset is not None:
-                summary["space_group"] = dataset.number
+            return get_space_group_robust(cell, positions, numbers)
     except Exception:
         pass
+    return None
+
+
+def _apply_struct_attrs_to_summary(summary: dict, struct_attrs: dict) -> None:
+    """Fill formula / cell / space_group into summary from StructureData attributes."""
+    struct_info = _extract_struct_info(struct_attrs)
+    for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
+              "cell", "positions", "numbers", "symbols", "n_atoms",
+              "composition_n_atoms"):
+        if struct_info.get(k) is not None:
+            summary[k] = struct_info[k]
+    sg = _spglib_from_attrs(struct_attrs)
+    if sg is not None and summary.get("space_group") is None:
+        summary["space_group"] = sg
 
 
 def _get_struct_attrs_from_crystal_calc_uuid(uuid_str: str) -> dict | None:
@@ -202,6 +214,7 @@ def _extract_struct_info(attrs: dict | None) -> dict:
         "a": None, "b": None, "c": None,
         "alpha": None, "beta": None, "gamma": None,
         "cell": None, "positions": None, "numbers": None, "symbols": None,
+        "n_atoms": None, "composition_n_atoms": None,
     }
     if not attrs:
         return result
@@ -255,6 +268,8 @@ def _extract_struct_info(attrs: dict | None) -> dict:
         result["positions"] = positions_list
         result["numbers"] = numbers_list
         result["symbols"] = symbols_list
+        result["n_atoms"] = len(sites)
+        result["composition_n_atoms"] = f"{formula}|{len(sites)}" if formula else ""
     except Exception:
         pass
     return result
@@ -290,12 +305,43 @@ def _get_struct_attrs_from_calc(calc) -> dict | None:
     return None
 
 
+def _extract_mpds_id_from_provenance(calc) -> str | None:
+    """Walk up the AiiDA provenance to find an ``mpds_query`` input and build
+    a compact ``"formula|sgs"`` MPDS id, or fall back to a workchain label of
+    the form ``"MgO/225"``. Returns ``None`` when nothing could be determined.
+    """
+    import re as _re
+    node = getattr(calc, 'caller', None)
+    visited = 0
+    while node is not None and visited < 10:
+        visited += 1
+        try:
+            for link in node.base.links.get_incoming().all():
+                if link.link_label == 'mpds_query':
+                    qd = link.node.get_dict() if hasattr(link.node, 'get_dict') else {}
+                    formulae = qd.get('formulae')
+                    sgs = qd.get('sgs')
+                    if formulae:
+                        return f"{formulae}|{sgs}" if sgs else formulae
+        except Exception:
+            pass
+        # workchain label fallback (e.g. 'MgO/225 Seebeck direct')
+        label = getattr(node, 'label', '') or ''
+        m = _re.match(r'([A-Za-z][A-Za-z0-9]*)\s*/\s*(\d+)', label)
+        if m:
+            return f"{m.group(1)}|{m.group(2)}"
+        node = getattr(node, 'caller', None)
+    return None
+
+
 _null_summary_keys = [
     "a", "b", "c", "alpha", "beta", "gamma",
     "cell", "positions", "numbers", "symbols",
+    "n_atoms", "composition_n_atoms", "mpds_id",
     "bandgap", "sum_sq_disp", "rmsd_disp", "output_path",
     "cost_eur", "hetzner_rate",
     "has_phonons", "phonon_freq_min", "phonon_freq_max",
+    "phonon_freq_mean", "phonon_freq_std",
     "phonon_n_imag", "phonon_modes_count",
     "total_energy", "fermi_energy", "magnetic_moment", "n_iterations",
 ]
@@ -448,25 +494,13 @@ def _enrich_with_structure_fast(
                 if struct_attrs:
                     struct_info = _extract_struct_info(struct_attrs)
                     for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
-                               "cell", "positions", "numbers", "symbols"):
+                               "cell", "positions", "numbers", "symbols",
+                               "n_atoms", "composition_n_atoms"):
                         if struct_info.get(k) is not None:
                             summary[k] = struct_info[k]
-                    try:
-                        import spglib as _spglib
-                        cell = struct_attrs.get('cell')
-                        kinds = struct_attrs.get('kinds', [])
-                        sites = struct_attrs.get('sites', [])
-                        kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
-                        symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
-                        from ase.data import atomic_numbers as _ase_an
-                        numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
-                        positions = [s.get('position', [0, 0, 0]) for s in sites]
-                        if cell and numbers:
-                            dataset = _spglib.get_symmetry_dataset((cell, positions, numbers))
-                            if dataset is not None:
-                                summary["space_group"] = dataset.number
-                    except Exception:
-                        pass
+                    sg = _spglib_from_attrs(struct_attrs)
+                    if sg is not None and summary.get("space_group") is None:
+                        summary["space_group"] = sg
 
     crystal_no_formula = [s for s in summary_store
                           if s['uuid'] in crystal_uuid_set
@@ -481,25 +515,13 @@ def _enrich_with_structure_fast(
                 if struct_attrs:
                     struct_info = _extract_struct_info(struct_attrs)
                     for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
-                              "cell", "positions", "numbers", "symbols"):
+                              "cell", "positions", "numbers", "symbols",
+                              "n_atoms", "composition_n_atoms"):
                         if struct_info.get(k) is not None:
                             summary[k] = struct_info[k]
-                    try:
-                        import spglib as _spglib
-                        cell = struct_attrs.get('cell')
-                        kinds = struct_attrs.get('kinds', [])
-                        sites = struct_attrs.get('sites', [])
-                        kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
-                        symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
-                        from ase.data import atomic_numbers as _ase_an
-                        numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
-                        positions = [s.get('position', [0, 0, 0]) for s in sites]
-                        if cell and numbers:
-                            dataset = _spglib.get_symmetry_dataset((cell, positions, numbers))
-                            if dataset is not None:
-                                summary["space_group"] = dataset.number
-                    except Exception:
-                        pass
+                    sg = _spglib_from_attrs(struct_attrs)
+                    if sg is not None and summary.get("space_group") is None:
+                        summary["space_group"] = sg
             except Exception:
                 pass
             done += 1
@@ -534,6 +556,8 @@ def _enrich_with_structure_fast(
                                     summary['space_group'] = int(sgs)
                                 except (TypeError, ValueError):
                                     pass
+                            if summary.get('mpds_id') is None and formulae:
+                                summary['mpds_id'] = f"{formulae}|{sgs}" if sgs else formulae
                         elif lbl == 'crystal_calc_uuid':
                             try:
                                 scf_uuid = link.node.value
@@ -569,25 +593,17 @@ def _enrich_with_structure_fast(
                     if struct_attrs:
                         struct_info = _extract_struct_info(struct_attrs)
                         for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
-                                   "cell", "positions", "numbers", "symbols"):
+                                   "cell", "positions", "numbers", "symbols",
+                                   "n_atoms", "composition_n_atoms"):
                             if struct_info.get(k) is not None:
                                 summary[k] = struct_info[k]
-                        try:
-                            import spglib
-                            cell = struct_attrs.get('cell')
-                            kinds = struct_attrs.get('kinds', [])
-                            sites = struct_attrs.get('sites', [])
-                            kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
-                            symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
-                            from ase.data import atomic_numbers as _ase_an
-                            numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
-                            positions = [s.get('position', [0, 0, 0]) for s in sites]
-                            if cell and numbers:
-                                dataset = spglib.get_symmetry_dataset((cell, positions, numbers))
-                                if dataset is not None:
-                                    summary["space_group"] = dataset.number
-                        except Exception:
-                            pass
+                        sg = _spglib_from_attrs(struct_attrs)
+                        if sg is not None and summary.get("space_group") is None:
+                            summary["space_group"] = sg
+                    if summary.get("mpds_id") is None:
+                        mpds_id = _extract_mpds_id_from_provenance(calc)
+                        if mpds_id:
+                            summary["mpds_id"] = mpds_id
                 except Exception:
                     pass
                 done += 1
@@ -649,6 +665,11 @@ def _enrich_crystal_extras(summary_store: list[dict[str, Any]], crystal_uuids: l
             effective_type = "transport"
             summary["calc_type"] = "transport"
 
+        if summary.get("mpds_id") is None:
+            mpds_id = _extract_mpds_id_from_provenance(calc)
+            if mpds_id:
+                summary["mpds_id"] = mpds_id
+
         if effective_type == "phonon":
             text = _retrieved_file_text(calc, "OUTPUT")
             if not text:
@@ -661,6 +682,8 @@ def _enrich_crystal_extras(summary_store: list[dict[str, Any]], crystal_uuids: l
                 summary["has_phonons"] = parsed.get("has_phonons")
                 summary["phonon_freq_min"] = parsed.get("phonon_freq_min")
                 summary["phonon_freq_max"] = parsed.get("phonon_freq_max")
+                summary["phonon_freq_mean"] = parsed.get("phonon_freq_mean")
+                summary["phonon_freq_std"] = parsed.get("phonon_freq_std")
                 summary["phonon_n_imag"] = parsed.get("phonon_n_imag")
                 summary["phonon_modes_count"] = parsed.get("phonon_modes_count")
             phonon_count += 1
@@ -777,20 +800,45 @@ _SUMMARY_CSV_COLUMNS = [
     "duration", "bandgap", "total_energy", "fermi_energy",
     "magnetic_moment", "n_iterations",
     "has_phonons", "phonon_freq_min", "phonon_freq_max",
+    "phonon_freq_mean", "phonon_freq_std",
     "phonon_n_imag", "phonon_modes_count",
     "a", "b", "c", "alpha", "beta", "gamma",
-    "chemical_formula", "sum_sq_disp", "rmsd_disp", "output_path",
+    "chemical_formula", "n_atoms", "composition_n_atoms", "mpds_id",
+    "sum_sq_disp", "rmsd_disp", "output_path",
     "engine", "calc_type", "calc_date", "uuid",
     "seebeck_coefficient_uvk", "mu_ev", "temperature_k",
     "cost_eur", "label", "pk", "computer", "exit_status", "exit_message",
     "space_group", "pearson", "hetzner_rate",
-    "cell", "positions", "numbers", "symbols",
 ]
+
+# Columns kept out of the CSV (too verbose / not useful for the table).
+# ``cell`` is represented by the a,b,c,alpha,beta,gamma columns; ``numbers`` and
+# ``symbols`` are represented by ``composition_n_atoms``; ``positions`` is just
+# too verbose. They all remain in the JSON dump for full traceability.
+_CSV_DROP_COLUMNS = ["positions", "cell", "numbers", "symbols"]
+
+
+def _passes_strict_filter(summary: dict) -> bool:
+    """Strict inclusion filter for the CSV table.
+
+    Drops a calculation when:
+    - ``exit_status`` is present and non-zero (failed calc), or
+    - ``chemical_formula`` is missing/empty (no usable structure).
+
+    Dropped rows stay in the JSON dump and error reports for audit.
+    """
+    es = summary.get("exit_status")
+    if es is not None and es != 0:
+        return False
+    if not summary.get("chemical_formula"):
+        return False
+    return True
 
 
 def save_aiida_reports(
     summary_store: list[dict[str, Any]],
     output_dir: str | Path = "/tmp",
+    strict_filter: bool = True,
 ) -> None:
     """
     Save AiiDA summary CSV, JSON, and error reports.
@@ -804,46 +852,68 @@ def save_aiida_reports(
     Parameters:
     - summary_store: List of calculation summary dicts
     - output_dir: Directory to save reports to
+    - strict_filter: When True (default), drop rows with exit_status != 0
+      or no chemical_formula from the CSV only (JSON keeps everything).
     """
     time_now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     save_dir = Path(output_dir).resolve()
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    nested_keys = ["cell", "positions", "numbers", "symbols", "bandgap"]
+    # JSON keeps the full nested structure (cell, positions, ...).
+    json_path = save_dir / f"summary_{time_now}.json"
+    with open(json_path, "w") as f:
+        json.dump(summary_store, f, indent=2, default=str)
+    print(f"Summary JSON saved to: {json_path}")
 
-    if summary_store:
-        flat_summary = []
-        for row in summary_store:
-            try:
-                row = dict(row)
-                for k in nested_keys:
-                    if k in row and row[k] is not None:
-                        try:
-                            row[k] = json.dumps(row[k])
-                        except Exception:
-                            row[k] = None
-                for col in _SUMMARY_CSV_COLUMNS:
-                    row.setdefault(col, None)
-                flat_summary.append(row)
-            except Exception:
-                continue
+    if not summary_store:
+        return
 
-        if flat_summary:
-            df = pl.DataFrame(flat_summary, infer_schema_length=len(flat_summary))
-            ordered_cols = [c for c in _SUMMARY_CSV_COLUMNS if c in df.columns]
-            remaining_cols = [c for c in df.columns if c not in _SUMMARY_CSV_COLUMNS]
-            df = df.select(ordered_cols + remaining_cols)
-            df = df.drop(
-                [col for col in df.columns if df[col].null_count() == df.height]
-            )
-            csv_path = save_dir / f"summary_{time_now}.csv"
-            df.write_csv(csv_path)
-            print(f"Summary CSV saved to: {csv_path}")
+    if strict_filter:
+        before = len(summary_store)
+        csv_store = [s for s in summary_store if _passes_strict_filter(s)]
+        dropped = before - len(csv_store)
+        if dropped:
+            print(f"Strict filter: dropped {dropped} rows (no formula or exit_status != 0) from CSV")
+    else:
+        csv_store = list(summary_store)
 
-        json_path = save_dir / f"summary_{time_now}.json"
-        with open(json_path, "w") as f:
-            json.dump(summary_store, f, indent=2, default=str)
-        print(f"Summary JSON saved to: {json_path}")
+    if not csv_store:
+        print("No rows passed the strict filter; CSV not written.")
+        return
+
+    flat_summary = []
+    for row in csv_store:
+        try:
+            row = dict(row)
+            # cell represented by a,b,c,alpha,beta,gamma columns; drop right
+            # angles (±0.5°) so the CSV stays compact for cubic/orthorhombic.
+            nullify_right_angles(row)
+            # remaining nested keys still JSON-serialized
+            for k in ("bandgap",):
+                if k in row and row[k] is not None:
+                    try:
+                        row[k] = json.dumps(row[k])
+                    except Exception:
+                        row[k] = None
+            for col in _SUMMARY_CSV_COLUMNS:
+                row.setdefault(col, None)
+            for drop in _CSV_DROP_COLUMNS:
+                row.pop(drop, None)
+            flat_summary.append(row)
+        except Exception:
+            continue
+
+    if flat_summary:
+        df = pl.DataFrame(flat_summary, infer_schema_length=len(flat_summary))
+        ordered_cols = [c for c in _SUMMARY_CSV_COLUMNS if c in df.columns]
+        remaining_cols = [c for c in df.columns if c not in _SUMMARY_CSV_COLUMNS]
+        df = df.select(ordered_cols + remaining_cols)
+        df = df.drop(
+            [col for col in df.columns if col in _CSV_DROP_COLUMNS or df[col].null_count() == df.height]
+        )
+        csv_path = save_dir / f"summary_{time_now}.csv"
+        df.write_csv(csv_path)
+        print(f"Summary CSV saved to: {csv_path}")
 
     error_dict_crystal = {}
     error_dict_fleur = {}
@@ -903,6 +973,7 @@ def generate_aiida_reports(
     engine: str | None = None,
     max_duration: float | None = None,
     skip_displacement: bool = False,
+    strict_filter: bool = True,
 ) -> None:
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
@@ -963,4 +1034,4 @@ def generate_aiida_reports(
         return
 
     print(f"Found {len(summary_store)} calculations. Saving reports...\n")
-    save_aiida_reports(summary_store, output_dir=output_dir)
+    save_aiida_reports(summary_store, output_dir=output_dir, strict_filter=strict_filter)
