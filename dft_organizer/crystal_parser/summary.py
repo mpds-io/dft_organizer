@@ -146,7 +146,7 @@ def _parse_properties_only(path: Path) -> dict:
         "num_opt_cycles": 0,
         "seebeck_coefficient_uvk": float("nan"),
         "mu_ev": float("nan"),
-        "temperature_k": float("nan"),
+        "temperature_k": 0.0,
     }
 
     with open(path, "r") as f:
@@ -307,7 +307,7 @@ def parse_crystal_output(path: Path) -> dict:
                 "num_opt_cycles": 0,
                 "seebeck_coefficient_uvk": float("nan"),
                 "mu_ev": float("nan"),
-                "temperature_k": float("nan"),
+                "temperature_k": 0.0,
             },
             2,
         )
@@ -374,7 +374,7 @@ def parse_crystal_output(path: Path) -> dict:
         except Exception:
             results["seebeck_coefficient_uvk"] = float("nan")
             results["mu_ev"] = float("nan")
-            results["temperature_k"] = float("nan")
+            results["temperature_k"] = 0.0
 
     # band gap
     bandgap = float("nan")

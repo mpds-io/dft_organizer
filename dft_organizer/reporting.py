@@ -239,6 +239,7 @@ def _enrich_summary_with_phonons(
     summary.setdefault("phonon_freq_std", None)
     summary.setdefault("phonon_n_imag", None)
     summary.setdefault("phonon_modes_count", None)
+    summary.setdefault("temperature_k", 0.0)
 
     try:
         if engine == "crystal":
@@ -269,6 +270,7 @@ def _enrich_summary_with_phonons(
     summary["phonon_freq_std"] = parsed.get("phonon_freq_std")
     summary["phonon_n_imag"] = parsed.get("phonon_n_imag")
     summary["phonon_modes_count"] = parsed.get("phonon_modes_count")
+    summary["temperature_k"] = parsed.get("temperature_k", 0.0)
 
     details = parsed.get("details") or []
     uuid = summary.get("uuid")
@@ -415,6 +417,7 @@ def scan_calculations(
                 continue
             output_path = current_dir / ("out.xml" if "out.xml" in filenames else "out")
             summary = parse_fleur_output(output_path)
+            summary.setdefault("temperature_k", 0.0)
             summary["output_path"] = str(output_path)
             summary["engine"] = engine
             fleur_modes = summary.get("fleur_modes", {})
@@ -548,7 +551,7 @@ def save_reports(
                 "techs_1_FMIXING", "techs_2", "optgeom", "num_opt_cycles",
                 "MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK",
                 "t1", "t5", "k", "H", "smear", "spin", "TOLINTEG",
-                "positions", "cell", "numbers", "symbols",
+                "positions", "cell", "numbers", "symbols", "mpds_id",
             }
             flat_summary = []
             for row in csv_store:
@@ -569,7 +572,7 @@ def save_reports(
 
             if flat_summary:
                 df = pl.DataFrame(flat_summary)
-                _drop_cols = {"positions", "cell", "numbers", "symbols"}
+                _drop_cols = {"positions", "cell", "numbers", "symbols", "mpds_id"}
                 df = df.drop(
                     [col for col in df.columns if col in _drop_cols or df[col].null_count() == df.height]
                 )

@@ -337,7 +337,7 @@ def _extract_mpds_id_from_provenance(calc) -> str | None:
 _null_summary_keys = [
     "a", "b", "c", "alpha", "beta", "gamma",
     "cell", "positions", "numbers", "symbols",
-    "n_atoms", "composition_n_atoms", "mpds_id",
+    "n_atoms", "composition_n_atoms",
     "bandgap", "sum_sq_disp", "rmsd_disp", "output_path",
     "cost_eur", "hetzner_rate",
     "has_phonons", "phonon_freq_min", "phonon_freq_max",
@@ -431,13 +431,14 @@ def scan_aiida_calculations(
             "label": lbl,
             "engine": engine,
             "calc_type": determine_calc_type_summary(lbl),
-"chemical_formula": _formula_from_label(lbl),
+            "chemical_formula": _formula_from_label(lbl),
             "duration": duration,
             "pk": pk,
             "computer": comp,
             "calc_date": ctime.strftime("%Y-%m-%d %H:%M:%S") if ctime else None,
             "exit_status": exit_status,
             "exit_message": exit_message,
+            "temperature_k": 0.0,
         }
         for k in _null_summary_keys:
             summary[k] = None
@@ -686,6 +687,7 @@ def _enrich_crystal_extras(summary_store: list[dict[str, Any]], crystal_uuids: l
                 summary["phonon_freq_std"] = parsed.get("phonon_freq_std")
                 summary["phonon_n_imag"] = parsed.get("phonon_n_imag")
                 summary["phonon_modes_count"] = parsed.get("phonon_modes_count")
+                summary["temperature_k"] = parsed.get("temperature_k", 0.0)
             phonon_count += 1
             if phonon_count % 25 == 0:
                 print(f"  Crystal phonon: {phonon_count}/{len(crystal_uuids)}")
@@ -803,7 +805,7 @@ _SUMMARY_CSV_COLUMNS = [
     "phonon_freq_mean", "phonon_freq_std",
     "phonon_n_imag", "phonon_modes_count",
     "a", "b", "c", "alpha", "beta", "gamma",
-    "chemical_formula", "n_atoms", "composition_n_atoms", "mpds_id",
+    "chemical_formula", "n_atoms", "composition_n_atoms",
     "sum_sq_disp", "rmsd_disp", "output_path",
     "engine", "calc_type", "calc_date", "uuid",
     "seebeck_coefficient_uvk", "mu_ev", "temperature_k",
@@ -815,7 +817,7 @@ _SUMMARY_CSV_COLUMNS = [
 # ``cell`` is represented by the a,b,c,alpha,beta,gamma columns; ``numbers`` and
 # ``symbols`` are represented by ``composition_n_atoms``; ``positions`` is just
 # too verbose. They all remain in the JSON dump for full traceability.
-_CSV_DROP_COLUMNS = ["positions", "cell", "numbers", "symbols"]
+_CSV_DROP_COLUMNS = ["positions", "cell", "numbers", "symbols", "mpds_id"]
 
 
 def _passes_strict_filter(summary: dict) -> bool:
