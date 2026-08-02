@@ -9,7 +9,6 @@ from aiida_crystal_dft.io.d12 import D12
 from aiida import load_profile as load_aiida_profile
 
 from dft_organizer.sevenzip import compress_with_7z, extract_7z
-from dft_organizer.aiida.reporting import generate_aiida_reports
 
 _aiida_loaded = False
 
@@ -168,6 +167,39 @@ def _guess_calc_type_from_files(repo_folder) -> CalcLabel | None:
     if names & struct_files:
         return CalcLabel.STRUCT
     return None
+
+
+_CALC_LABEL_TO_CALC_TYPE = {
+    CalcLabel.PHONON: 'phonon',
+    CalcLabel.TRANSPORT: 'transport',
+    CalcLabel.ELECTRON: 'electron',
+    CalcLabel.ELASTIC: 'elastic',
+    CalcLabel.STRUCT: 'struct',
+    CalcLabel.HFORM: 'hform',
+}
+
+
+def determine_calc_type_summary(label: str) -> str:
+    """Return a lowercase ``calc_type`` for the CSV summary.
+
+    Property keywords (phonon, transport, electron, elastic) take precedence
+    over geometry-optimization keywords, so labels like
+    ``"CRYSTAL optimization step: Phonon frequencies [1]"`` classify as
+    ``'phonon'`` (not ``'optimise'``). Geometry-optimization calculations
+    (``'geometry'``/``'optim'``/``'relax'``) classify as ``'optimise'`` only
+    when no property keyword matches. Falls back to ``'scf'``.
+    """
+    calc_label = _determine_calc_type(label)
+    if calc_label is not None and calc_label in (
+        CalcLabel.PHONON, CalcLabel.TRANSPORT, CalcLabel.ELECTRON, CalcLabel.ELASTIC,
+    ):
+        return _CALC_LABEL_TO_CALC_TYPE[calc_label]
+    label_lower = label.lower()
+    if any(kw in label_lower for kw in ('geometry', 'optim', 'relax')):
+        return 'optimise'
+    if calc_label is not None:
+        return _CALC_LABEL_TO_CALC_TYPE.get(calc_label, 'scf')
+    return 'scf'
 
 
 def calculations_for_label(label: str, from_date: str | None = None, to_date: str | None = None) -> dict:
@@ -467,6 +499,7 @@ def launch_aiida_export(
 
     if generate_report:
         print("\n--- Generating reports from AiiDA data ---")
+        from dft_organizer.aiida.reporting import generate_aiida_reports
         generate_aiida_reports(
             label=label if not export_all else None,
             from_date=from_date,

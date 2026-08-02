@@ -7,7 +7,8 @@ from masci_tools.io.parsers.fleur import outxml_parser
 from ase.io import read
 from ase.geometry import cell_to_cellpar
 
-from dft_organizer.ase_utils import get_formula 
+from dft_organizer.ase_utils import get_formula
+from dft_organizer.structures import get_space_group_robust
 
 
 def round_floats(obj, ndigits: int = 2):
@@ -90,13 +91,17 @@ def parse_fleur_out_xml(filename: Path) -> dict:
                 "chemical_formula": get_formula(ase_obj, find_gcd=True)
             }
         )
+        results["n_atoms"] = len(ase_obj)
+        results["composition_n_atoms"] = (
+            f"{results['chemical_formula']}|{results['n_atoms']}"
+            if results["chemical_formula"] else ""
+        )
         try:
-            import spglib
-            dataset = spglib.get_symmetry_dataset((
+            sg = get_space_group_robust(
                 ase_obj.get_cell(), ase_obj.get_positions(), ase_obj.get_atomic_numbers(),
-            ))
-            if dataset is not None:
-                results["space_group"] = dataset.number
+            )
+            if sg is not None:
+                results["space_group"] = sg
         except Exception:
             pass
     except Exception as e:

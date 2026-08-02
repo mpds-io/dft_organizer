@@ -19,7 +19,7 @@ Parameters:
 from dft_organizer.aiida.reporting import generate_aiida_reports
 
 generate_aiida_reports(
-    from_date="2026-05-13",
+    from_date=None,
     skip_errors=True,
     output_dir="reports/aiida_db",
 )
