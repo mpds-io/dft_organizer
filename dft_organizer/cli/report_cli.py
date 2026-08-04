@@ -35,8 +35,28 @@ from dft_organizer.reporting import generate_reports_only
     metavar="YYYY-MM-DD",
     help="Only include calculations modified on or after this date.",
 )
-
-def cli(path: str, aiida: bool, skip_errors: bool, output_dir: str | None, from_date: str | None) -> None:
+@click.option(
+    "--provider",
+    type=click.Choice(["hetzner", "vultr_usa"], case_sensitive=False),
+    default=None,
+    help="Override cloud provider for cost calculation (default: auto-detect from computer name).",
+)
+@click.option(
+    "--machine-type",
+    type=str,
+    default=None,
+    help="Override machine type (cloud plan, e.g. vbm-24c-256gb-amd) for cost calculation. "
+    "Default: read from /etc/yascheduler/yascheduler.conf.",
+)
+def cli(
+    path: str,
+    aiida: bool,
+    skip_errors: bool,
+    output_dir: str | None,
+    from_date: str | None,
+    provider: str | None,
+    machine_type: str | None,
+) -> None:
     """
     Generate summary CSV and error reports without archiving.
     """
@@ -46,6 +66,8 @@ def cli(path: str, aiida: bool, skip_errors: bool, output_dir: str | None, from_
         skip_errors=skip_errors,
         output_dir=Path(output_dir) if output_dir else None,
         from_date=from_date,
+        provider=provider,
+        machine_type=machine_type,
     )
 
 

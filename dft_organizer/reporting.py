@@ -14,7 +14,13 @@ import numpy as np
 
 from dft_organizer.aiida_utils import extract_uuid_from_path
 from dft_organizer.utils import detect_engine, get_table_string
-from dft_organizer.pricing import get_cloud_rate, get_cost
+from dft_organizer.pricing import (
+    detect_provider,
+    get_cloud_rate,
+    get_cost,
+    get_currency,
+    read_provider_and_machine_type_from_config,
+)
 from dft_organizer.crystal_parser import (
     parse_crystal_output,
     is_properties_output,
@@ -59,8 +65,13 @@ def structure_displacement_ase(atoms_init, atoms_final) -> dict:
     return {"sum_sq_disp": sum_sq, "rmsd_disp": rmsd}
 
 
-def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
-    """Add pk, space_group, cost_eur from AiiDA CalcJobNode.
+def enrich_with_aiida_data(
+    summary_store: list[dict[str, Any]],
+    provider: str | None = None,
+    machine_type: str | None = None,
+    skip_cost: bool = False,
+) -> None:
+    """Add pk, space_group, cost from AiiDA CalcJobNode.
 
     For each summary with a uuid:
     - Load CalcJobNode, get .pk
@@ -68,6 +79,13 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
     - Get computer name → cloud rate → cost = duration * rate
     Skips if uuid missing or node not loadable (sets fields to None).
     Modifies summary_store in-place.
+
+    Parameters:
+    - provider: Override cloud provider for cost calculation ("hetzner"/"vultr_usa");
+      when None, auto-detect from computer name via detect_provider()
+    - machine_type: Override machine type (plan name) for cost calculation;
+      when None, uses the computer name for rate lookup
+    - skip_cost: When True, do not compute cost/rate/currency (leave as None)
     """
     load_aiida_profile()
 
@@ -78,7 +96,9 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
 
         summary["pk"] = None
         summary["space_group"] = None
-        summary["cost_eur"] = None
+        summary["cost"] = None
+        summary["cloud_rate"] = None
+        summary["currency"] = None
         summary["calc_date"] = None
 
         try:
@@ -93,23 +113,32 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
             struct = calc.inputs.structure
             ase_atoms = struct.get_ase()
             import spglib
-            dataset = spglib.get_symmetry_dataset((
-                ase_atoms.cell,
-                ase_atoms.positions,
-                ase_atoms.get_atomic_numbers(),
-            ))
+
+            dataset = spglib.get_symmetry_dataset(
+                (
+                    ase_atoms.cell,
+                    ase_atoms.positions,
+                    ase_atoms.get_atomic_numbers(),
+                )
+            )
             if dataset is not None:
                 summary["space_group"] = dataset.number
         except Exception:
             pass
 
-        try:
-            duration = summary.get("duration")
-            cost = get_cost(duration, calc.computer.label if calc.computer else "", provider="hetzner")
-            if cost is not None:
-                summary["cost_eur"] = cost
-        except Exception:
-            pass
+        if not skip_cost:
+            try:
+                duration = summary.get("duration")
+                comp_name = calc.computer.label if calc.computer else ""
+                prov = provider or detect_provider(comp_name)
+                rate_name = machine_type or comp_name
+                summary["cloud_rate"] = get_cloud_rate(rate_name, provider=prov)
+                summary["currency"] = get_currency(prov)
+                cost = get_cost(duration, rate_name, provider=prov)
+                if cost is not None:
+                    summary["cost"] = cost
+            except Exception:
+                pass
 
         if summary.get("engine") == "fleur":
             try:
@@ -125,8 +154,8 @@ def _fetch_fleur_seebeck(calc) -> dict | None:
     FleurDOSLocalWorkChain and extract Seebeck data."""
     node = calc
     while node is not None:
-        ptype = getattr(node, 'process_type', '') or ''
-        if 'FleurDOSLocalWorkChain' in ptype:
+        ptype = getattr(node, "process_type", "") or ""
+        if "FleurDOSLocalWorkChain" in ptype:
             try:
                 sd = node.outputs.output_seebeck.get_dict()
                 pd = node.outputs.output_dos_local_wc_para.get_dict()
@@ -137,7 +166,7 @@ def _fetch_fleur_seebeck(calc) -> dict | None:
                 }
             except Exception:
                 return None
-        node = getattr(node, 'caller', None)
+        node = getattr(node, "caller", None)
     return None
 
 
@@ -197,7 +226,7 @@ def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
                 ase_last = last_struct.get_ase()
                 disp = structure_displacement_ase(ase_first, ase_last)
                 summary["sum_sq_disp"] = round(disp["sum_sq_disp"], 2)
-                summary["rmsd_disp"]   = round(disp["rmsd_disp"], 2)
+                summary["rmsd_disp"] = round(disp["rmsd_disp"], 2)
             except Exception as e:
                 print(f"Cannot compute displacement for CalcJob {calc_uuid}: {e}")
                 continue
@@ -213,24 +242,34 @@ def scan_calculations(
     skip_errors: bool = False,
     calculation_type: str = "all",
     engine_type: str | None = None,
+    provider: str | None = None,
+    machine_type: str | None = None,
+    skip_cost: bool = False,
 ) -> tuple[list[dict[str, Any]], dict, dict]:
     """
     Go through directory tree, parse outputs and generate error reports.
 
     Parameters:
     - root_dir: Path to the root directory to scan.
-    - aiida: Whether to enrich with AiiDA data (pk, space_group, cost_eur, displacement).
+    - aiida: Whether to enrich with AiiDA data (pk, space_group, cost, displacement).
             UUID is always extracted from path regardless of this flag.
     - verbose: Whether to print summaries to stdout.
     - skip_errors: Whether to skip entries with parsing errors in the summary.
     - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
     - engine_type: Filter by engine: None (all), "crystal", or "fleur".
+    - provider: Override cloud provider for cost calculation ("hetzner"/"vultr_usa");
+      when None, auto-detect from computer name via detect_provider()
+    - machine_type: Override machine type (plan name) for cost calculation;
+      when None, uses the computer name for rate lookup
+    - skip_cost: When True, do not compute cost/rate/currency (leave as None)
     """
     root_path = Path(root_dir).resolve()
 
     valid_engines = {"crystal", "fleur"}
     if engine_type is not None and engine_type not in valid_engines:
-        raise ValueError(f"engine_type must be one of {valid_engines} or None, got: {engine_type!r}")
+        raise ValueError(
+            f"engine_type must be one of {valid_engines} or None, got: {engine_type!r}"
+        )
 
     summary_store: list[dict[str, Any]] = []
     error_dict_crystal: dict = {}
@@ -243,7 +282,9 @@ def scan_calculations(
 
         engine = detect_engine(filenames, current_dir)
 
-        if engine == "crystal" and ("OUTPUT" in filenames or "OUTPUT_prop" in filenames):
+        if engine == "crystal" and (
+            "OUTPUT" in filenames or "OUTPUT_prop" in filenames
+        ):
             if engine_type and engine_type != "crystal":
                 continue
             if "OUTPUT_prop" in filenames:
@@ -269,10 +310,12 @@ def scan_calculations(
             summary["output_path"] = str(output_path)
             summary["engine"] = engine
             summary["calc_type"] = calc_type
-            summary["calc_date"] = datetime.fromtimestamp(output_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            summary["calc_date"] = datetime.fromtimestamp(
+                output_path.stat().st_mtime
+            ).strftime("%Y-%m-%d %H:%M:%S")
             uuid = extract_uuid_from_path(output_path, root_path)
             summary["uuid"] = uuid
-            if skip_errors and math.isnan(summary.get('duration', float('nan'))):
+            if skip_errors and math.isnan(summary.get("duration", float("nan"))):
                 continue
             summary_store.append(summary)
             if verbose:
@@ -288,15 +331,22 @@ def scan_calculations(
             summary["engine"] = engine
             fleur_modes = summary.get("fleur_modes", {})
             is_relax = isinstance(fleur_modes, dict) and fleur_modes.get("relax", False)
-            has_disp = summary.get("sum_sq_disp") is not None and not (
-                isinstance(summary.get("sum_sq_disp"), float) and math.isnan(summary.get("sum_sq_disp", 0))
-            ) and float(summary.get("sum_sq_disp", 0)) > 0.001
+            has_disp = (
+                summary.get("sum_sq_disp") is not None
+                and not (
+                    isinstance(summary.get("sum_sq_disp"), float)
+                    and math.isnan(summary.get("sum_sq_disp", 0))
+                )
+                and float(summary.get("sum_sq_disp", 0)) > 0.001
+            )
             summary["calc_type"] = "optimise" if (is_relax or has_disp) else "scf"
             summary.pop("fleur_modes", None)
-            summary["calc_date"] = datetime.fromtimestamp(output_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            summary["calc_date"] = datetime.fromtimestamp(
+                output_path.stat().st_mtime
+            ).strftime("%Y-%m-%d %H:%M:%S")
             uuid = extract_uuid_from_path(output_path, root_path)
             summary["uuid"] = uuid
-            if skip_errors and math.isnan(summary.get('duration', float('nan'))):
+            if skip_errors and math.isnan(summary.get("duration", float("nan"))):
                 continue
             summary_store.append(summary)
             if verbose:
@@ -314,12 +364,21 @@ def scan_calculations(
 
     if aiida and summary_store:
         enrich_fleur_with_displacement(summary_store)
-        enrich_with_aiida_data(summary_store)
+        enrich_with_aiida_data(
+            summary_store,
+            provider=provider,
+            machine_type=machine_type,
+            skip_cost=skip_cost,
+        )
 
         for summary in summary_store:
             if summary.get("engine") == "fleur" and summary.get("calc_type") == "scf":
                 sq = summary.get("sum_sq_disp")
-                if sq is not None and not (isinstance(sq, float) and math.isnan(sq)) and float(sq) > 0.001:
+                if (
+                    sq is not None
+                    and not (isinstance(sq, float) and math.isnan(sq))
+                    and float(sq) > 0.001
+                ):
                     summary["calc_type"] = "optimise"
 
     return summary_store, error_dict_crystal, error_dict_fleur
@@ -371,11 +430,32 @@ def save_reports(
         return json.dumps(v)
 
     if summary_store:
-        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols", "bandgap", "space_group"]
+        nested_keys = [
+            "cell",
+            "positions",
+            "pbc",
+            "numbers",
+            "symbols",
+            "bandgap",
+            "space_group",
+        ]
         _DROP_KEYS = {
-            "techs_1_FMIXING", "techs_2", "optgeom", "num_opt_cycles",
-            "MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK",
-            "t1", "t5", "k", "H", "smear", "spin", "TOLINTEG",
+            "techs_1_FMIXING",
+            "techs_2",
+            "optgeom",
+            "num_opt_cycles",
+            "MAXCYCLE",
+            "TOLDEE",
+            "TOLLDENS",
+            "TOLLGRID",
+            "SHRINK",
+            "t1",
+            "t5",
+            "k",
+            "H",
+            "smear",
+            "spin",
+            "TOLINTEG",
         }
         flat_summary = []
 
@@ -494,11 +574,22 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
     except Exception as e:
         print(f"Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         return None
 
 
-def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "all", output_dir: Path | None = None, engine_type: str | None = None, from_date: str | None = None) -> None:
+def generate_reports_only(
+    root_dir: Path,
+    aiida: bool = False,
+    skip_errors: bool = False,
+    calculation_type: str = "all",
+    output_dir: Path | None = None,
+    engine_type: str | None = None,
+    from_date: str | None = None,
+    provider: str | None = None,
+    machine_type: str | None = None,
+) -> None:
     """
     Scan a calculation tree, print a short summary to stdout
     and save a summary CSV plus error reports.
@@ -508,7 +599,22 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
     - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
     - engine_type: Filter by engine: None (all), "crystal", or "fleur".
     - from_date: Only include calculations modified on or after this date (YYYY-MM-DD).
+    - provider: Override cloud provider for cost calculation ("hetzner"/"vultr_usa");
+      when None, auto-detect from computer name via detect_provider()
+    - machine_type: Override machine type (plan name) for cost calculation;
+      when None, attempts to read from /etc/yascheduler/yascheduler.conf
+    - provider: Override cloud provider; when None, attempts to read from config
     """
+    skip_cost = False
+    if machine_type is None or provider is None:
+        cfg_provider, cfg_machine_type = read_provider_and_machine_type_from_config()
+        if machine_type is None:
+            machine_type = cfg_machine_type
+        if provider is None:
+            provider = cfg_provider
+        if provider is None and machine_type is None:
+            skip_cost = True
+
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
         print(f"Directory does not exist: {root_path}")
@@ -527,14 +633,20 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
         skip_errors=skip_errors,
         calculation_type=calculation_type,
         engine_type=engine_type,
+        provider=provider,
+        machine_type=machine_type,
+        skip_cost=skip_cost,
     )
 
     if from_date and summary_store:
         from datetime import datetime
+
         cutoff = datetime.strptime(from_date, "%Y-%m-%d")
         summary_store = [
-            s for s in summary_store
-            if s.get("calc_date") and datetime.strptime(s["calc_date"], "%Y-%m-%d %H:%M:%S") >= cutoff
+            s
+            for s in summary_store
+            if s.get("calc_date")
+            and datetime.strptime(s["calc_date"], "%Y-%m-%d %H:%M:%S") >= cutoff
         ]
 
     save_reports(root_path, summary_store, err_cr, err_fl, output_dir=save_dir)
@@ -545,9 +657,12 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
 
 
 if __name__ == "__main__":
-
     # summary_store, err_cr, err_fl = scan_calculations(Path("/data/aiida"), aiida=True, verbose=True)
     # root_path = Path("./")
     # save_reports(root_path, summary_store, err_cr, err_fl)
 
-    generate_reports_only(Path("/root/projects/dft_organizer/dft_organizer/fleur_data_part"), aiida=True, skip_errors=True)
+    generate_reports_only(
+        Path("/root/projects/dft_organizer/dft_organizer/fleur_data_part"),
+        aiida=True,
+        skip_errors=True,
+    )
