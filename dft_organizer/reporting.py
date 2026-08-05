@@ -15,11 +15,8 @@ import numpy as np
 from dft_organizer.aiida_utils import extract_uuid_from_path
 from dft_organizer.utils import detect_engine, get_table_string
 from dft_organizer.pricing import (
-    detect_provider,
-    get_cloud_rate,
-    get_cost,
-    get_currency,
     read_provider_and_machine_type_from_config,
+    resolve_provider_and_rate,
 )
 from dft_organizer.crystal_parser import (
     parse_crystal_output,
@@ -69,7 +66,6 @@ def enrich_with_aiida_data(
     summary_store: list[dict[str, Any]],
     provider: str | None = None,
     machine_type: str | None = None,
-    skip_cost: bool = False,
 ) -> None:
     """Add pk, space_group, cost from AiiDA CalcJobNode.
 
@@ -85,7 +81,6 @@ def enrich_with_aiida_data(
       when None, auto-detect from computer name via detect_provider()
     - machine_type: Override machine type (plan name) for cost calculation;
       when None, uses the computer name for rate lookup
-    - skip_cost: When True, do not compute cost/rate/currency (leave as None)
     """
     load_aiida_profile()
 
@@ -126,19 +121,23 @@ def enrich_with_aiida_data(
         except Exception:
             pass
 
-        if not skip_cost:
-            try:
-                duration = summary.get("duration")
-                comp_name = calc.computer.label if calc.computer else ""
-                prov = provider or detect_provider(comp_name)
-                rate_name = machine_type or comp_name
-                summary["cloud_rate"] = get_cloud_rate(rate_name, provider=prov)
-                summary["currency"] = get_currency(prov)
-                cost = get_cost(duration, rate_name, provider=prov)
-                if cost is not None:
-                    summary["cost"] = cost
-            except Exception:
-                pass
+        try:
+            duration = summary.get("duration")
+            comp_name = calc.computer.label if calc.computer else ""
+            prov, rate, currency = resolve_provider_and_rate(
+                comp_name, provider=provider, machine_type=machine_type
+            )
+            if currency is not None:
+                summary["currency"] = currency
+            if rate is not None:
+                summary["cloud_rate"] = rate
+                if duration is not None:
+                    import math as _math
+
+                    if not (isinstance(duration, float) and _math.isnan(duration)):
+                        summary["cost"] = round(duration * rate, 2)
+        except Exception:
+            pass
 
         if summary.get("engine") == "fleur":
             try:
@@ -244,7 +243,6 @@ def scan_calculations(
     engine_type: str | None = None,
     provider: str | None = None,
     machine_type: str | None = None,
-    skip_cost: bool = False,
 ) -> tuple[list[dict[str, Any]], dict, dict]:
     """
     Go through directory tree, parse outputs and generate error reports.
@@ -368,7 +366,6 @@ def scan_calculations(
             summary_store,
             provider=provider,
             machine_type=machine_type,
-            skip_cost=skip_cost,
         )
 
         for summary in summary_store:
@@ -596,24 +593,17 @@ def generate_reports_only(
 
     Parameters:
     - output_dir: Directory to save CSV and reports. Defaults to /tmp/.
-    - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
-    - engine_type: Filter by engine: None (all), "crystal", or "fleur".
-    - from_date: Only include calculations modified on or after this date (YYYY-MM-DD).
-    - provider: Override cloud provider for cost calculation ("hetzner"/"vultr_usa");
-      when None, auto-detect from computer name via detect_provider()
+    - provider: Override cloud provider; when None, attempts to read from config,
+      then auto-detects from computer name
     - machine_type: Override machine type (plan name) for cost calculation;
       when None, attempts to read from /etc/yascheduler/yascheduler.conf
-    - provider: Override cloud provider; when None, attempts to read from config
     """
-    skip_cost = False
     if machine_type is None or provider is None:
         cfg_provider, cfg_machine_type = read_provider_and_machine_type_from_config()
         if machine_type is None:
             machine_type = cfg_machine_type
         if provider is None:
             provider = cfg_provider
-        if provider is None and machine_type is None:
-            skip_cost = True
 
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
@@ -635,7 +625,6 @@ def generate_reports_only(
         engine_type=engine_type,
         provider=provider,
         machine_type=machine_type,
-        skip_cost=skip_cost,
     )
 
     if from_date and summary_store:

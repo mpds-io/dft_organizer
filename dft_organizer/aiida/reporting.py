@@ -27,11 +27,8 @@ def _ensure_aiida():
 
 
 from dft_organizer.pricing import (
-    detect_provider,
-    get_cloud_rate,
-    get_cost,
-    get_currency,
     read_provider_and_machine_type_from_config,
+    resolve_provider_and_rate,
 )
 
 
@@ -290,7 +287,6 @@ def scan_aiida_calculations(
     provider: str | None = None,
     engine: str | None = None,
     machine_type: str | None = None,
-    skip_cost: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Query AiiDA CalcJobNodes and build a summary store for reporting.
@@ -307,8 +303,6 @@ def scan_aiida_calculations(
     - engine: Filter by calculation engine ("crystal"/"fleur"); when None, include all
     - machine_type: Override machine type (plan name, e.g. "vbm-24c-256gb-amd") for
       cost calculation; when None, falls back to computer name lookup
-    - skip_cost: When True, do not compute cost/rate/currency (leave as None);
-      used when no provider/machine_type info is available
 
     Returns: list of summary dicts
     """
@@ -369,14 +363,19 @@ def scan_aiida_calculations(
         for k in _null_summary_keys:
             summary[k] = None
 
-        if comp and not skip_cost:
-            prov = provider or detect_provider(comp)
-            rate_name = machine_type or comp
-            summary["cloud_rate"] = get_cloud_rate(rate_name, provider=prov)
-            summary["currency"] = get_currency(prov)
-            cost = get_cost(duration, rate_name, provider=prov)
-            if cost is not None:
-                summary["cost"] = cost
+        if comp:
+            prov, rate, currency = resolve_provider_and_rate(
+                comp, provider=provider, machine_type=machine_type
+            )
+            if currency is not None:
+                summary["currency"] = currency
+            if rate is not None:
+                summary["cloud_rate"] = rate
+                if duration is not None:
+                    import math as _math
+
+                    if not (isinstance(duration, float) and _math.isnan(duration)):
+                        summary["cost"] = round(duration * rate, 2)
 
         if engine == "fleur":
             fleur_uuids.append(uuid)
@@ -819,19 +818,16 @@ def generate_aiida_reports(
 
     Convenience function that combines scan_aiida_calculations() and save_aiida_reports().
     When ``machine_type`` or ``provider`` is None, attempts to read them from the
-    yascheduler config (``/etc/yascheduler/yascheduler.conf``). When no provider
-    info is available (no explicit flag, no config), cost columns are skipped.
+    yascheduler config (``/etc/yascheduler/yascheduler.conf``). When neither is
+    available, cost is still attempted via auto-detection from the AiiDA computer
+    name; cost columns are omitted only when no rate can be determined.
     """
-    skip_cost = False
     if machine_type is None or provider is None:
         cfg_provider, cfg_machine_type = read_provider_and_machine_type_from_config()
         if machine_type is None:
             machine_type = cfg_machine_type
         if provider is None:
             provider = cfg_provider
-        # No provider info from anywhere — skip cost calculation
-        if provider is None and machine_type is None:
-            skip_cost = True
 
     print("\n" + "=" * 60)
     print("GENERATING REPORTS FROM AiiDA DATABASE")
@@ -845,7 +841,6 @@ def generate_aiida_reports(
         provider=provider,
         engine=engine,
         machine_type=machine_type,
-        skip_cost=skip_cost,
     )
 
     if not summary_store:
