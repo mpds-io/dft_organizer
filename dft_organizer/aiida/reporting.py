@@ -26,14 +26,17 @@ def _ensure_aiida():
         _aiida_loaded = True
 
 
-from dft_organizer.pricing import get_cloud_rate, get_cost
+from dft_organizer.pricing import (
+    read_provider_and_machine_type_from_config,
+    resolve_provider_and_rate,
+)
 
 
 def _fetch_fleur_seebeck(calc) -> dict | None:
     node = calc
     while node is not None:
-        ptype = getattr(node, 'process_type', '') or ''
-        if 'FleurDOSLocalWorkChain' in ptype:
+        ptype = getattr(node, "process_type", "") or ""
+        if "FleurDOSLocalWorkChain" in ptype:
             try:
                 sd = node.outputs.output_seebeck.get_dict()
                 pd = node.outputs.output_dos_local_wc_para.get_dict()
@@ -44,7 +47,7 @@ def _fetch_fleur_seebeck(calc) -> dict | None:
                 }
             except Exception:
                 return None
-        node = getattr(node, 'caller', None)
+        node = getattr(node, "caller", None)
     return None
 
 
@@ -95,7 +98,9 @@ def _get_fleur_displacement(calc, conn) -> dict:
     try:
         first_struct = _get_structure_from_uuid(first_s_uuid)
         last_struct = _get_structure_from_uuid(last_s_uuid)
-        disp = _structure_displacement_ase(first_struct.get_ase(), last_struct.get_ase())
+        disp = _structure_displacement_ase(
+            first_struct.get_ase(), last_struct.get_ase()
+        )
         result["sum_sq_disp"] = round(disp["sum_sq_disp"], 2)
         result["rmsd_disp"] = round(disp["rmsd_disp"], 2)
     except Exception:
@@ -107,9 +112,9 @@ def _get_fleur_displacement(calc, conn) -> dict:
 def _build_date_filter(from_date: str | None, to_date: str | None) -> dict:
     filt = {}
     if from_date:
-        filt['>='] = datetime.strptime(from_date, '%Y-%m-%d')
+        filt[">="] = datetime.strptime(from_date, "%Y-%m-%d")
     if to_date:
-        filt['<='] = datetime.strptime(to_date, '%Y-%m-%d')
+        filt["<="] = datetime.strptime(to_date, "%Y-%m-%d")
     return filt
 
 
@@ -126,13 +131,16 @@ def _formula_from_label(label: str | None) -> str | None:
 
 def _determine_calc_type(label: str) -> str:
     label_lower = label.lower()
-    if any(kw in label_lower for kw in ('phonon', 'elastic', 'fort.34', 'fort.9')):
-        return 'properties'
-    if any(kw in label_lower for kw in ('band', 'doss', 'fort.25', 'transport', 'seebeck', 'sigma', 'kappa')):
-        return 'properties'
-    if any(kw in label_lower for kw in ('geometry', 'optim', 'relax')):
-        return 'optimise'
-    return 'scf'
+    if any(kw in label_lower for kw in ("phonon", "elastic", "fort.34", "fort.9")):
+        return "properties"
+    if any(
+        kw in label_lower
+        for kw in ("band", "doss", "fort.25", "transport", "seebeck", "sigma", "kappa")
+    ):
+        return "properties"
+    if any(kw in label_lower for kw in ("geometry", "optim", "relax")):
+        return "optimise"
+    return "scf"
 
 
 def _formula_from_label(label: str | None) -> str | None:
@@ -149,20 +157,28 @@ def _formula_from_label(label: str | None) -> str | None:
 def _extract_struct_info(attrs: dict | None) -> dict:
     result = {
         "chemical_formula": None,
-        "a": None, "b": None, "c": None,
-        "alpha": None, "beta": None, "gamma": None,
-        "cell": None, "positions": None, "numbers": None, "symbols": None,
+        "a": None,
+        "b": None,
+        "c": None,
+        "alpha": None,
+        "beta": None,
+        "gamma": None,
+        "cell": None,
+        "positions": None,
+        "numbers": None,
+        "symbols": None,
     }
     if not attrs:
         return result
     try:
-        cell = attrs.get('cell')
-        kinds = attrs.get('kinds', [])
-        sites = attrs.get('sites', [])
+        cell = attrs.get("cell")
+        kinds = attrs.get("kinds", [])
+        sites = attrs.get("sites", [])
         if not cell or not sites:
             return result
 
         import numpy as np
+
         cell_arr = np.array(cell)
         a_val = float(np.linalg.norm(cell_arr[0]))
         b_val = float(np.linalg.norm(cell_arr[1]))
@@ -174,25 +190,27 @@ def _extract_struct_info(attrs: dict | None) -> dict:
         beta_val = float(np.degrees(np.arccos(np.clip(cos_beta, -1, 1))))
         gamma_val = float(np.degrees(np.arccos(np.clip(cos_gamma, -1, 1))))
 
-        kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
-        symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
+        kind_to_symbol = {k["name"]: k["symbols"][0] for k in kinds if k.get("symbols")}
+        symbols_list = [kind_to_symbol.get(s.get("kind_name", ""), "?") for s in sites]
         numbers_list = []
         from ase.data import atomic_numbers as ase_atomic_numbers
+
         for sym in symbols_list:
             numbers_list.append(ase_atomic_numbers.get(sym, 0))
-        positions_list = [s.get('position', [0, 0, 0]) for s in sites]
+        positions_list = [s.get("position", [0, 0, 0]) for s in sites]
 
         counts = {}
         for sym in symbols_list:
             counts[sym] = counts.get(sym, 0) + 1
         import math as _math
+
         g = 0
         for v in counts.values():
             g = _math.gcd(g, v) if g else v
         if g > 1:
             counts = {k: v // g for k, v in counts.items()}
         order = sorted(counts.keys())
-        formula = ''.join(k if counts[k] == 1 else f'{k}{counts[k]}' for k in order)
+        formula = "".join(k if counts[k] == 1 else f"{k}{counts[k]}" for k in order)
 
         result["chemical_formula"] = formula
         result["a"] = round(a_val, 6)
@@ -214,10 +232,10 @@ def _engine_from_process_type(process_type: str | None) -> str | None:
     if not process_type:
         return None
     pt = process_type.lower()
-    if 'crystal' in pt:
-        return 'crystal'
-    if 'fleur' in pt:
-        return 'fleur'
+    if "crystal" in pt:
+        return "crystal"
+    if "fleur" in pt:
+        return "fleur"
     return None
 
 
@@ -227,7 +245,7 @@ def _get_struct_attrs_from_calc(calc) -> dict | None:
         return struct.base.attributes.all
     except Exception:
         pass
-    node = getattr(calc, 'caller', None)
+    node = getattr(calc, "caller", None)
     visited = 0
     while node is not None and visited < 10:
         visited += 1
@@ -236,15 +254,28 @@ def _get_struct_attrs_from_calc(calc) -> dict | None:
             return struct.base.attributes.all
         except Exception:
             pass
-        node = getattr(node, 'caller', None)
+        node = getattr(node, "caller", None)
     return None
 
 
 _null_summary_keys = [
-    "a", "b", "c", "alpha", "beta", "gamma",
-    "cell", "positions", "numbers", "symbols",
-    "bandgap", "sum_sq_disp", "rmsd_disp", "output_path",
-    "cost_eur", "hetzner_rate",
+    "a",
+    "b",
+    "c",
+    "alpha",
+    "beta",
+    "gamma",
+    "cell",
+    "positions",
+    "numbers",
+    "symbols",
+    "bandgap",
+    "sum_sq_disp",
+    "rmsd_disp",
+    "output_path",
+    "cost",
+    "cloud_rate",
+    "currency",
 ]
 
 
@@ -253,6 +284,9 @@ def scan_aiida_calculations(
     from_date: str | None = None,
     to_date: str | None = None,
     skip_errors: bool = False,
+    provider: str | None = None,
+    engine: str | None = None,
+    machine_type: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Query AiiDA CalcJobNodes and build a summary store for reporting.
@@ -264,6 +298,11 @@ def scan_aiida_calculations(
     - from_date: Only include calcs created on or after this date (YYYY-MM-DD)
     - to_date: Only include calcs created on or before this date (YYYY-MM-DD)
     - skip_errors: Skip calculations with exit_status != 0
+    - provider: Override cloud provider for cost calculation ("hetzner"/"vultr_usa");
+      when None, auto-detect from computer name via detect_provider()
+    - engine: Filter by calculation engine ("crystal"/"fleur"); when None, include all
+    - machine_type: Override machine type (plan name, e.g. "vbm-24c-256gb-amd") for
+      cost calculation; when None, falls back to computer name lookup
 
     Returns: list of summary dicts
     """
@@ -271,17 +310,22 @@ def scan_aiida_calculations(
 
     filters = {}
     if label:
-        filters['label'] = {'==': label}
+        filters["label"] = {"==": label}
     date_filter = _build_date_filter(from_date, to_date)
     if date_filter:
-        filters['ctime'] = date_filter
+        filters["ctime"] = date_filter
+    if engine:
+        filters["process_type"] = {"like": f"%{engine}%"}
 
     print("Querying AiiDA database...")
     qb = QueryBuilder()
-    qb.append(CalcJobNode, tag='calc',
-              filters=filters or None,
-              project=['uuid', 'label', 'process_type', 'ctime', 'mtime', 'id', 'attributes'])
-    qb.append(Computer, with_node='calc', project=['label'], outerjoin=True)
+    qb.append(
+        CalcJobNode,
+        tag="calc",
+        filters=filters or None,
+        project=["uuid", "label", "process_type", "ctime", "mtime", "id", "attributes"],
+    )
+    qb.append(Computer, with_node="calc", project=["label"], outerjoin=True)
 
     rows = list(qb.iterall())
     print(f"Found {len(rows)} calculations in database.")
@@ -291,13 +335,13 @@ def scan_aiida_calculations(
     crystal_uuids = []
 
     for uuid, lbl, process_type, ctime, mtime, pk, attrs, comp in rows:
-        exit_status = attrs.get('exit_status') if attrs else None
-        exit_message = str(attrs.get('exit_message', '')) if attrs else ''
+        exit_status = attrs.get("exit_status") if attrs else None
+        exit_message = str(attrs.get("exit_message", "")) if attrs else ""
 
         if skip_errors and exit_status is not None and exit_status != 0:
             continue
 
-        engine = _engine_from_process_type(process_type) or 'unknown'
+        engine = _engine_from_process_type(process_type) or "unknown"
 
         duration = None
         if ctime and mtime:
@@ -308,7 +352,7 @@ def scan_aiida_calculations(
             "label": lbl,
             "engine": engine,
             "calc_type": _determine_calc_type(lbl),
-"chemical_formula": _formula_from_label(lbl),
+            "chemical_formula": _formula_from_label(lbl),
             "duration": duration,
             "pk": pk,
             "computer": comp,
@@ -320,14 +364,22 @@ def scan_aiida_calculations(
             summary[k] = None
 
         if comp:
-            summary["hetzner_rate"] = get_cloud_rate(comp, provider="hetzner")
-            cost = get_cost(duration, comp, provider="hetzner")
-            if cost is not None:
-                summary["cost_eur"] = cost
+            prov, rate, currency = resolve_provider_and_rate(
+                comp, provider=provider, machine_type=machine_type
+            )
+            if currency is not None:
+                summary["currency"] = currency
+            if rate is not None:
+                summary["cloud_rate"] = rate
+                if duration is not None:
+                    import math as _math
 
-        if engine == 'fleur':
+                    if not (isinstance(duration, float) and _math.isnan(duration)):
+                        summary["cost"] = round(duration * rate, 2)
+
+        if engine == "fleur":
             fleur_uuids.append(uuid)
-        elif engine == 'crystal':
+        elif engine == "crystal":
             crystal_uuids.append(uuid)
 
         summary_store.append(summary)
@@ -335,7 +387,9 @@ def scan_aiida_calculations(
     _enrich_with_structure_fast(summary_store, crystal_uuids, fleur_uuids)
 
     if fleur_uuids:
-        print(f"Enriching {len(fleur_uuids)} FLEUR calculations (Seebeck, displacement)...")
+        print(
+            f"Enriching {len(fleur_uuids)} FLEUR calculations (Seebeck, displacement)..."
+        )
         _enrich_fleur_extras(summary_store, fleur_uuids)
 
     return summary_store
@@ -349,72 +403,127 @@ def _enrich_with_structure_fast(
     crystal_uuid_set = list(crystal_uuids)
     fleur_uuid_set = set(fleur_uuids)
 
-    print(f"Fetching structure data for {len(crystal_uuid_set)} CRYSTAL calcs (fast)...")
+    print(
+        f"Fetching structure data for {len(crystal_uuid_set)} CRYSTAL calcs (fast)..."
+    )
     if crystal_uuid_set:
         qb = QueryBuilder()
-        qb.append(CalcJobNode, tag='calc',
-                  filters={'uuid': {'in': crystal_uuid_set}},
-                  project=['uuid'])
-        qb.append(StructureData, with_incoming='calc', project=['attributes'], outerjoin=True)
+        qb.append(
+            CalcJobNode,
+            tag="calc",
+            filters={"uuid": {"in": crystal_uuid_set}},
+            project=["uuid"],
+        )
+        qb.append(
+            StructureData, with_incoming="calc", project=["attributes"], outerjoin=True
+        )
         struct_map = {}
         for calc_uuid, struct_attrs in qb.iterall():
             if struct_attrs:
                 struct_map[calc_uuid] = struct_attrs
 
         for summary in summary_store:
-            if summary['uuid'] in crystal_uuid_set:
-                struct_attrs = struct_map.get(summary['uuid'])
+            if summary["uuid"] in crystal_uuid_set:
+                struct_attrs = struct_map.get(summary["uuid"])
                 if struct_attrs:
                     struct_info = _extract_struct_info(struct_attrs)
-                    for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
-                               "cell", "positions", "numbers", "symbols"):
+                    for k in (
+                        "chemical_formula",
+                        "a",
+                        "b",
+                        "c",
+                        "alpha",
+                        "beta",
+                        "gamma",
+                        "cell",
+                        "positions",
+                        "numbers",
+                        "symbols",
+                    ):
                         if struct_info.get(k) is not None:
                             summary[k] = struct_info[k]
                     try:
                         import spglib as _spglib
-                        cell = struct_attrs.get('cell')
-                        kinds = struct_attrs.get('kinds', [])
-                        sites = struct_attrs.get('sites', [])
-                        kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
-                        symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
+
+                        cell = struct_attrs.get("cell")
+                        kinds = struct_attrs.get("kinds", [])
+                        sites = struct_attrs.get("sites", [])
+                        kind_to_symbol = {
+                            k["name"]: k["symbols"][0]
+                            for k in kinds
+                            if k.get("symbols")
+                        }
+                        symbols_list = [
+                            kind_to_symbol.get(s.get("kind_name", ""), "?")
+                            for s in sites
+                        ]
                         from ase.data import atomic_numbers as _ase_an
+
                         numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
-                        positions = [s.get('position', [0, 0, 0]) for s in sites]
+                        positions = [s.get("position", [0, 0, 0]) for s in sites]
                         if cell and numbers:
-                            dataset = _spglib.get_symmetry_dataset((cell, positions, numbers))
+                            dataset = _spglib.get_symmetry_dataset(
+                                (cell, positions, numbers)
+                            )
                             if dataset is not None:
                                 summary["space_group"] = dataset.number
                     except Exception:
                         pass
 
-    crystal_no_formula = [s for s in summary_store
-                          if s['uuid'] in crystal_uuid_set
-                          and not s.get('chemical_formula')]
+    crystal_no_formula = [
+        s
+        for s in summary_store
+        if s["uuid"] in crystal_uuid_set and not s.get("chemical_formula")
+    ]
     if crystal_no_formula:
-        print(f"Fallback: fetching structure via provenance for {len(crystal_no_formula)} CRYSTAL calcs without formula...")
+        print(
+            f"Fallback: fetching structure via provenance for {len(crystal_no_formula)} CRYSTAL calcs without formula..."
+        )
         done = 0
         for summary in crystal_no_formula:
             try:
-                calc = load_node(summary['uuid'])
+                calc = load_node(summary["uuid"])
                 struct_attrs = _get_struct_attrs_from_calc(calc)
                 if struct_attrs:
                     struct_info = _extract_struct_info(struct_attrs)
-                    for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
-                              "cell", "positions", "numbers", "symbols"):
+                    for k in (
+                        "chemical_formula",
+                        "a",
+                        "b",
+                        "c",
+                        "alpha",
+                        "beta",
+                        "gamma",
+                        "cell",
+                        "positions",
+                        "numbers",
+                        "symbols",
+                    ):
                         if struct_info.get(k) is not None:
                             summary[k] = struct_info[k]
                     try:
                         import spglib as _spglib
-                        cell = struct_attrs.get('cell')
-                        kinds = struct_attrs.get('kinds', [])
-                        sites = struct_attrs.get('sites', [])
-                        kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
-                        symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
+
+                        cell = struct_attrs.get("cell")
+                        kinds = struct_attrs.get("kinds", [])
+                        sites = struct_attrs.get("sites", [])
+                        kind_to_symbol = {
+                            k["name"]: k["symbols"][0]
+                            for k in kinds
+                            if k.get("symbols")
+                        }
+                        symbols_list = [
+                            kind_to_symbol.get(s.get("kind_name", ""), "?")
+                            for s in sites
+                        ]
                         from ase.data import atomic_numbers as _ase_an
+
                         numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
-                        positions = [s.get('position', [0, 0, 0]) for s in sites]
+                        positions = [s.get("position", [0, 0, 0]) for s in sites]
                         if cell and numbers:
-                            dataset = _spglib.get_symmetry_dataset((cell, positions, numbers))
+                            dataset = _spglib.get_symmetry_dataset(
+                                (cell, positions, numbers)
+                            )
                             if dataset is not None:
                                 summary["space_group"] = dataset.number
                     except Exception:
@@ -426,31 +535,55 @@ def _enrich_with_structure_fast(
                 print(f"  CRYSTAL fallback: {done}/{len(crystal_no_formula)}")
 
     if fleur_uuid_set:
-        print(f"Fetching structure data for {len(fleur_uuid_set)} FLEUR calcs (via provenance)...")
+        print(
+            f"Fetching structure data for {len(fleur_uuid_set)} FLEUR calcs (via provenance)..."
+        )
         done = 0
         for summary in summary_store:
-            if summary['uuid'] in fleur_uuid_set:
+            if summary["uuid"] in fleur_uuid_set:
                 try:
-                    calc = load_node(summary['uuid'])
+                    calc = load_node(summary["uuid"])
                     struct_attrs = _get_struct_attrs_from_calc(calc)
                     if struct_attrs:
                         struct_info = _extract_struct_info(struct_attrs)
-                        for k in ("chemical_formula", "a", "b", "c", "alpha", "beta", "gamma",
-                                   "cell", "positions", "numbers", "symbols"):
+                        for k in (
+                            "chemical_formula",
+                            "a",
+                            "b",
+                            "c",
+                            "alpha",
+                            "beta",
+                            "gamma",
+                            "cell",
+                            "positions",
+                            "numbers",
+                            "symbols",
+                        ):
                             if struct_info.get(k) is not None:
                                 summary[k] = struct_info[k]
                         try:
                             import spglib
-                            cell = struct_attrs.get('cell')
-                            kinds = struct_attrs.get('kinds', [])
-                            sites = struct_attrs.get('sites', [])
-                            kind_to_symbol = {k['name']: k['symbols'][0] for k in kinds if k.get('symbols')}
-                            symbols_list = [kind_to_symbol.get(s.get('kind_name', ''), '?') for s in sites]
+
+                            cell = struct_attrs.get("cell")
+                            kinds = struct_attrs.get("kinds", [])
+                            sites = struct_attrs.get("sites", [])
+                            kind_to_symbol = {
+                                k["name"]: k["symbols"][0]
+                                for k in kinds
+                                if k.get("symbols")
+                            }
+                            symbols_list = [
+                                kind_to_symbol.get(s.get("kind_name", ""), "?")
+                                for s in sites
+                            ]
                             from ase.data import atomic_numbers as _ase_an
+
                             numbers = [_ase_an.get(sym, 0) for sym in symbols_list]
-                            positions = [s.get('position', [0, 0, 0]) for s in sites]
+                            positions = [s.get("position", [0, 0, 0]) for s in sites]
                             if cell and numbers:
-                                dataset = spglib.get_symmetry_dataset((cell, positions, numbers))
+                                dataset = spglib.get_symmetry_dataset(
+                                    (cell, positions, numbers)
+                                )
                                 if dataset is not None:
                                     summary["space_group"] = dataset.number
                         except Exception:
@@ -462,8 +595,14 @@ def _enrich_with_structure_fast(
                     print(f"  FLEUR structure: {done}/{len(fleur_uuid_set)}")
 
 
-def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[str]) -> None:
-    uuid_to_idx = {s['uuid']: i for i, s in enumerate(summary_store) if s.get('uuid') in set(fleur_uuids)}
+def _enrich_fleur_extras(
+    summary_store: list[dict[str, Any]], fleur_uuids: list[str]
+) -> None:
+    uuid_to_idx = {
+        s["uuid"]: i
+        for i, s in enumerate(summary_store)
+        if s.get("uuid") in set(fleur_uuids)
+    }
 
     print(f"Fetching Seebeck data for {len(fleur_uuids)} FLEUR calcs...")
     done = 0
@@ -502,21 +641,52 @@ def _enrich_fleur_extras(summary_store: list[dict[str, Any]], fleur_uuids: list[
         print("  Skipping displacement data (DB connection failed)")
 
     import math
+
     for summary in summary_store:
         if summary.get("engine") == "fleur" and summary.get("calc_type") == "scf":
             sq = summary.get("sum_sq_disp")
-            if sq is not None and not (isinstance(sq, float) and math.isnan(sq)) and float(sq) > 0.001:
+            if (
+                sq is not None
+                and not (isinstance(sq, float) and math.isnan(sq))
+                and float(sq) > 0.001
+            ):
                 summary["calc_type"] = "optimise"
 
 
 _SUMMARY_CSV_COLUMNS = [
-    "duration", "bandgap", "a", "b", "c", "alpha", "beta", "gamma",
-    "chemical_formula", "sum_sq_disp", "rmsd_disp", "output_path",
-    "engine", "calc_type", "calc_date", "uuid",
-    "seebeck_coefficient_uvk", "mu_ev", "temperature_k",
-    "cost_eur", "label", "pk", "computer", "exit_status", "exit_message",
-    "space_group", "pearson", "hetzner_rate",
-    "cell", "positions", "numbers", "symbols",
+    "duration",
+    "bandgap",
+    "a",
+    "b",
+    "c",
+    "alpha",
+    "beta",
+    "gamma",
+    "chemical_formula",
+    "sum_sq_disp",
+    "rmsd_disp",
+    "output_path",
+    "engine",
+    "calc_type",
+    "calc_date",
+    "uuid",
+    "seebeck_coefficient_uvk",
+    "mu_ev",
+    "temperature_k",
+    "cost",
+    "currency",
+    "label",
+    "pk",
+    "computer",
+    "exit_status",
+    "exit_message",
+    "space_group",
+    "pearson",
+    "cloud_rate",
+    "cell",
+    "positions",
+    "numbers",
+    "symbols",
 ]
 
 
@@ -583,14 +753,22 @@ def save_aiida_reports(
         if s.get("exit_status") is not None and s.get("exit_status") != 0:
             engine = s.get("engine", "unknown")
             label = s.get("label", "")
-            exit_msg = s.get("exit_message", "") or f"exit_status={s.get('exit_status')}"
+            exit_msg = (
+                s.get("exit_message", "") or f"exit_status={s.get('exit_status')}"
+            )
             error_key = f"Error: {exit_msg}"
             if engine == "crystal":
-                error_dict_crystal.setdefault(error_key, []).append(label or s.get("uuid", ""))
+                error_dict_crystal.setdefault(error_key, []).append(
+                    label or s.get("uuid", "")
+                )
             elif engine == "fleur":
-                error_dict_fleur.setdefault(error_key, []).append(label or s.get("uuid", ""))
+                error_dict_fleur.setdefault(error_key, []).append(
+                    label or s.get("uuid", "")
+                )
             else:
-                error_dict_crystal.setdefault(error_key, []).append(label or s.get("uuid", ""))
+                error_dict_crystal.setdefault(error_key, []).append(
+                    label or s.get("uuid", "")
+                )
 
     if error_dict_crystal:
         error_path = save_dir / f"report_crystal_{time_now}.txt"
@@ -631,12 +809,26 @@ def generate_aiida_reports(
     to_date: str | None = None,
     skip_errors: bool = False,
     output_dir: str | Path = "/tmp",
+    provider: str | None = None,
+    engine: str | None = None,
+    machine_type: str | None = None,
 ) -> None:
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
 
     Convenience function that combines scan_aiida_calculations() and save_aiida_reports().
+    When ``machine_type`` or ``provider`` is None, attempts to read them from the
+    yascheduler config (``/etc/yascheduler/yascheduler.conf``). When neither is
+    available, cost is still attempted via auto-detection from the AiiDA computer
+    name; cost columns are omitted only when no rate can be determined.
     """
+    if machine_type is None or provider is None:
+        cfg_provider, cfg_machine_type = read_provider_and_machine_type_from_config()
+        if machine_type is None:
+            machine_type = cfg_machine_type
+        if provider is None:
+            provider = cfg_provider
+
     print("\n" + "=" * 60)
     print("GENERATING REPORTS FROM AiiDA DATABASE")
     print("=" * 60 + "\n")
@@ -646,6 +838,9 @@ def generate_aiida_reports(
         from_date=from_date,
         to_date=to_date,
         skip_errors=skip_errors,
+        provider=provider,
+        engine=engine,
+        machine_type=machine_type,
     )
 
     if not summary_store:
