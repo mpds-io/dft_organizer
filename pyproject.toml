@@ -13,6 +13,7 @@ dependencies = [
     "pg8000",
     "aiida-crystal-dft @ git+https://github.com/tilde-lab/aiida-crystal-dft",
     "ase-fleur @ git+https://github.com/JuDFTteam/ase-fleur",
+    "ab_initio_calculations",
 ]
 requires-python = ">=3.9"
 classifiers = [
@@ -39,6 +40,7 @@ dft-extract = "dft_organizer.cli.extract_archives_cli:cli"
 dft-unpack = "dft_organizer.cli.rearchive_cli:cli"
 dft-report = "dft_organizer.cli.report_cli:cli"
 dft-report-aiida = "dft_organizer.cli.report_aiida_cli:cli"
+dft-report-phonons = "dft_organizer.cli.report_phonons_cli:cli"
 dft-seebeck-compare = "dft_organizer.cli.seebeck_compare_cli:cli"
 
 [tool.setuptools.packages.find]

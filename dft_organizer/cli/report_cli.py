@@ -36,27 +36,20 @@ from dft_organizer.reporting import generate_reports_only
     help="Only include calculations modified on or after this date.",
 )
 @click.option(
-    "--provider",
-    type=click.Choice(["hetzner", "vultr_usa"], case_sensitive=False),
-    default=None,
-    help="Override cloud provider for cost calculation (default: auto-detect from computer name).",
+    "--calc-type",
+    type=str,
+    default="all",
+    metavar="TYPE",
+    help="Filter by calculation type: scf, optimise, phonon, transport, elastic, electron, properties, or all (default).",
 )
 @click.option(
-    "--machine-type",
-    type=str,
-    default=None,
-    help="Override machine type (cloud plan, e.g. vbm-24c-256gb-amd) for cost calculation. "
-    "Default: read from /etc/yascheduler/yascheduler.conf.",
+    "--no-strict-filter",
+    is_flag=True,
+    default=False,
+    help="Disable the strict CSV filter (by default, rows with exit_status != 0 or no chemical_formula are dropped from the CSV; JSON keeps everything).",
 )
-def cli(
-    path: str,
-    aiida: bool,
-    skip_errors: bool,
-    output_dir: str | None,
-    from_date: str | None,
-    provider: str | None,
-    machine_type: str | None,
-) -> None:
+
+def cli(path: str, aiida: bool, skip_errors: bool, output_dir: str | None, from_date: str | None, calc_type: str | None, no_strict_filter: bool) -> None:
     """
     Generate summary CSV and error reports without archiving.
     """
@@ -66,8 +59,8 @@ def cli(
         skip_errors=skip_errors,
         output_dir=Path(output_dir) if output_dir else None,
         from_date=from_date,
-        provider=provider,
-        machine_type=machine_type,
+        calculation_type=calc_type or "all",
+        strict_filter=not no_strict_filter,
     )
 
 
