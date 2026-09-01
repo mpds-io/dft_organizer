@@ -1,0 +1,23 @@
+# Tasks: phonon-reporting
+
+- [x] Copy CRYSTAL phonon parser from PR #18 (`crystal_parser/properties/phonon.py`)
+- [x] Copy FLEUR phonon stub from PR #18 (`fleur_parser/phonon.py`)
+- [x] Copy `structures.py` from PR #18 (`get_space_group_robust`, `nullify_right_angles`)
+- [x] Update `crystal_parser/__init__.py` and `fleur_parser/__init__.py` with phonon exports
+- [x] Add `determine_calc_type_summary()` and `_CALC_LABEL_TO_CALC_TYPE` to `aiida/export.py`
+- [x] Replace `aiida/reporting.py` with PR18 base + our additions:
+  - [x] Replace `get_cloud_rate`/`get_cost` with `resolve_provider_and_rate`
+  - [x] Add `_pearson_from_attrs()` for Pearson symbol filling
+  - [x] Add `_enrich_phonon_data()` for FLEUR phonon WorkChain enrichment
+  - [x] Add FLEUR phonon columns to `_SUMMARY_CSV_COLUMNS`
+  - [x] Add `save_aiida_phonon_reports()`, `generate_aiida_phonon_reports()`, `_PHONON_CSV_COLUMNS`
+  - [x] Add `provider`, `machine_type`, `phonon_t_eval`, `phonon_method`, `phonon_mesh` params
+- [x] Create `phonon_utils.py` (extract_frequencies, integrate_frequencies, scan_phonon_workchains)
+- [x] Create `cli/report_phonons_cli.py` (standalone phonon CLI)
+- [x] Update `cli/report_aiida_cli.py` with PR18 options + phonon options
+- [x] Update `cli/report_cli.py` with `--calc-type` from PR18
+- [x] Update `reporting.py` (file-based) with PR18 phonon parsing
+- [x] Update `pyproject.toml` (ab_initio_calculations dep, dft-report-phonons entry point)
+- [x] Test: standalone phonon report (9 structures with ZPE/F/S/Cv)
+- [x] Test: CRYSTAL phonon report (10 CRYSTAL phonon CalcJobs)
+- [x] Commit and force-push to remote

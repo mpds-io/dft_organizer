@@ -1,0 +1,12 @@
+schema: default
+change: phonon-reporting
+title: "Phonon reporting with CRYSTAL parsing + FLEUR WorkChain enrichment + thermodynamic integration"
+artifacts:
+  - name: proposal
+    done: true
+  - name: design
+    done: true
+  - name: specs/phonon-reporting/spec
+    done: true
+  - name: tasks
+    done: true
