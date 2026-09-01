@@ -183,6 +183,21 @@ def _get_reduced_formula(symbols: list[str]) -> str:
     return "".join(k if cnt[k] == 1 else f"{k}{cnt[k]}" for k in order)
 
 
+def _sgs_from_label(label: str | None) -> int | None:
+    """Extract space-group number from a label like 'ZnO/186: Phonon frequencies [1]'."""
+    if not label or "/" not in label:
+        return None
+    rest = label.split("/", 1)[1].strip()
+    if not rest:
+        return None
+    token = rest.split()[0] if " " in rest else rest
+    token = token.rstrip(":;,.")
+    try:
+        return int(token)
+    except (TypeError, ValueError):
+        return None
+
+
 def get_phonon_workchain_summary(
     pk: int,
     mesh: list[int] | None = None,
@@ -211,7 +226,9 @@ def get_phonon_workchain_summary(
     symbols = ase_atoms.get_chemical_symbols()
 
     dataset = _spglib.get_symmetry_dataset((cell, positions, numbers))
-    space_group = dataset.number if dataset is not None else None
+    sg_spglib = dataset.number if dataset is not None else None
+    sg_label = _sgs_from_label(wc.label)
+    space_group = sg_label if sg_label is not None else sg_spglib
     pearson = compute_pearson_symbol(cell, positions, numbers) if dataset else None
 
     from ase.geometry import cell_to_cellpar as _cellpar
@@ -378,7 +395,7 @@ def get_crystal_phonon_summary(
     exit_status = calc.exit_status
 
     # Structure from inputs
-    structure = calc.inputs.structure
+    structure = calc.inputs["structure"]
     ase_atoms = structure.get_ase()
 
     import spglib as _spglib
@@ -389,7 +406,11 @@ def get_crystal_phonon_summary(
     symbols = ase_atoms.get_chemical_symbols()
 
     dataset = _spglib.get_symmetry_dataset((cell, positions, numbers))
-    space_group = dataset.number if dataset is not None else None
+    sg_spglib = dataset.number if dataset is not None else None
+
+    # SG from label takes priority (conventional setting), spglib as fallback
+    sg_label = _sgs_from_label(calc.label)
+    space_group = sg_label if sg_label is not None else sg_spglib
     pearson = compute_pearson_symbol(cell, positions, numbers) if dataset else None
 
     from ase.geometry import cell_to_cellpar as _cellpar
