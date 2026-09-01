@@ -1369,6 +1369,7 @@ def generate_aiida_reports(
 _PHONON_CSV_COLUMNS = [
     "pk",
     "label",
+    "engine",
     "chemical_formula",
     "space_group",
     "pearson",
@@ -1392,6 +1393,13 @@ _PHONON_CSV_COLUMNS = [
     "s_at_t_jkmol",
     "cv_at_t_jkmol",
     "t_eval",
+    "has_phonons",
+    "phonon_freq_min",
+    "phonon_freq_max",
+    "phonon_freq_mean",
+    "phonon_freq_std",
+    "phonon_n_imag",
+    "phonon_modes_count",
 ]
 
 
