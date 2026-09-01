@@ -426,9 +426,6 @@ def scan_aiida_calculations(
     skip_displacement: bool = False,
     provider: str | None = None,
     machine_type: str | None = None,
-    phonon_t_eval: int = 300,
-    phonon_method: str = "custom",
-    phonon_mesh: list[int] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Query AiiDA CalcJobNodes and build a summary store for reporting.
@@ -559,68 +556,47 @@ def scan_aiida_calculations(
     phonon_rows = [s for s in summary_store if s.get("calc_type") == "phonon"]
     if phonon_rows:
         print(f"Enriching {len(phonon_rows)} phonon calculations...")
-        _enrich_phonon_data(
-            summary_store,
-            t_eval=phonon_t_eval,
-            method=phonon_method,
-            mesh=phonon_mesh,
-            provider=provider,
-            machine_type=machine_type,
-        )
+        _enrich_phonon_data(summary_store)
 
     return summary_store
 
 
 def _enrich_phonon_data(
     summary_store: list[dict[str, Any]],
-    t_eval: int = 300,
-    method: str = "custom",
-    mesh: list[int] | None = None,
     provider: str | None = None,
     machine_type: str | None = None,
 ) -> None:
-    """Enrich summary rows with calc_type='phonon' using phonon_utils (FLEUR)."""
-    try:
-        from dft_organizer.phonon_utils import get_phonon_workchain_summary
-    except ImportError as e:
-        print(f"  Skipping phonon enrichment (import failed): {e}")
-        return
+    """Enrich phonon rows with just phonon_pk and has_phonon.
 
+    For full thermodynamic properties, use dft-report-phonons CLI.
+    """
     done = 0
     for summary in summary_store:
         if summary.get("calc_type") != "phonon":
             continue
+        engine = summary.get("engine", "")
         try:
-            calc = load_node(summary["uuid"])
-            wc = calc.caller
-            while wc is not None and wc.process_label != "PhonopyFleurWorkChain":
-                wc = wc.caller
-            if wc is None:
-                continue
-
-            phonon_summary = get_phonon_workchain_summary(
-                wc.pk,
-                mesh=mesh,
-                t_eval=t_eval,
-                method=method,
-                provider=provider,
-                machine_type=machine_type,
-            )
-            for key in (
-                "n_imaginary",
-                "zpe_kjmol",
-                "f_at_t_kjmol",
-                "s_at_t_jkmol",
-                "cv_at_t_jkmol",
-                "phonon_n_qpoints",
-                "phonon_n_bands",
-                "t_eval",
-                "pearson",
-            ):
-                if phonon_summary.get(key) is not None:
-                    summary[key] = phonon_summary[key]
+            if engine == "crystal":
+                # CRYSTAL: has_phonons already set by _enrich_crystal_extras
+                summary["phonon_pk"] = summary.get("pk")
+                if summary.get("has_phonons") is None:
+                    summary["has_phonon"] = False
+                else:
+                    summary["has_phonon"] = bool(summary["has_phonons"])
+            else:
+                # FLEUR: walk provenance to parent PhonopyFleurWorkChain
+                calc = load_node(summary["uuid"])
+                wc = calc.caller
+                while wc is not None and wc.process_label != "PhonopyFleurWorkChain":
+                    wc = wc.caller
+                if wc is not None:
+                    summary["phonon_pk"] = wc.pk
+                    summary["has_phonon"] = True
+                else:
+                    summary["has_phonon"] = False
         except Exception as e:
             print(f"  Failed phonon enrichment for PK {summary.get('pk')}: {e}")
+            summary["has_phonon"] = False
         done += 1
         if done % 5 == 0:
             print(f"  Phonon enrichment: {done}")
@@ -1092,14 +1068,8 @@ _SUMMARY_CSV_COLUMNS = [
     "exit_message",
     "space_group",
     "pearson",
-    "n_imaginary",
-    "zpe_kjmol",
-    "f_at_t_kjmol",
-    "s_at_t_jkmol",
-    "cv_at_t_jkmol",
-    "phonon_n_qpoints",
-    "phonon_n_bands",
-    "t_eval",
+    "phonon_pk",
+    "has_phonon",
 ]
 
 # Columns kept out of the CSV (too verbose / not useful for the table).
@@ -1281,9 +1251,6 @@ def generate_aiida_reports(
     strict_filter: bool = True,
     provider: str | None = None,
     machine_type: str | None = None,
-    phonon_t_eval: int = 300,
-    phonon_method: str = "custom",
-    phonon_mesh: list[int] | None = None,
 ) -> None:
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
@@ -1311,9 +1278,6 @@ def generate_aiida_reports(
         skip_displacement=skip_displacement,
         provider=provider,
         machine_type=machine_type,
-        phonon_t_eval=phonon_t_eval,
-        phonon_method=phonon_method,
-        phonon_mesh=phonon_mesh,
     )
 
     if calc_type and calc_type != "transport" and summary_store:

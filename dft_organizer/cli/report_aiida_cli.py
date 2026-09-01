@@ -79,20 +79,6 @@ from dft_organizer.aiida.reporting import generate_aiida_reports
     help="Override machine type (cloud plan, e.g. vbm-24c-256gb-amd) for cost calculation. "
     "Default: read from /etc/yascheduler/yascheduler.conf.",
 )
-@click.option(
-    "--phonon-t-eval",
-    type=int,
-    default=300,
-    show_default=True,
-    help="Temperature [K] for F/S/Cv in phonon columns.",
-)
-@click.option(
-    "--phonon-method",
-    type=click.Choice(["custom", "phonopy", "ase"], case_sensitive=False),
-    default="custom",
-    show_default=True,
-    help="Integration method for phonon thermodynamic properties.",
-)
 def cli(
     label,
     output_dir,
@@ -106,8 +92,6 @@ def cli(
     no_strict_filter,
     provider,
     machine_type,
-    phonon_t_eval,
-    phonon_method,
 ):
     """
     Generate summary CSV, JSON, and error report from AiiDA database.
@@ -129,8 +113,6 @@ def cli(
         strict_filter=not no_strict_filter,
         provider=provider,
         machine_type=machine_type,
-        phonon_t_eval=phonon_t_eval,
-        phonon_method=phonon_method,
     )
 
 
