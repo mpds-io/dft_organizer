@@ -151,13 +151,15 @@ def _formula_from_workchain_label(label: str | None) -> str | None:
 
 def _sgs_from_workchain_label(label: str | None) -> int | None:
     """Extract space-group number from a workchain label like
-    ``'Co2As/189 Seebeck direct'`` (integer after ``'/'``)."""
+    ``'Co2As/189 Seebeck direct'`` or ``'ZnO/186: Phonon frequencies [1]'``
+    (integer after ``'/'``)."""
     if not label or "/" not in label:
         return None
     rest = label.split("/", 1)[1].strip()
     if not rest:
         return None
     token = rest.split()[0] if " " in rest else rest
+    token = token.rstrip(":;,.")
     try:
         return int(token)
     except (TypeError, ValueError):
@@ -227,10 +229,9 @@ def _apply_struct_attrs_to_summary(summary: dict, struct_attrs: dict) -> None:
     sg = _spglib_from_attrs(struct_attrs)
     if sg is not None and summary.get("space_group") is None:
         summary["space_group"] = sg
-    if summary.get("pearson") is None:
-        pr = _pearson_from_attrs(struct_attrs)
-        if pr is not None:
-            summary["pearson"] = pr
+
+
+def _get_struct_attrs_from_crystal_calc_uuid(uuid_str: str) -> dict | None:
     """Load the CRYSTAL SCF calc referenced by a ``crystal_calc_uuid`` Str
     input and return the attributes of its ``structure`` StructureData input.
     Returns ``None`` if anything is missing."""
@@ -506,6 +507,7 @@ def scan_aiida_calculations(
             "engine": engine,
             "calc_type": determine_calc_type_summary(lbl),
             "chemical_formula": _formula_from_label(lbl),
+            "space_group": _sgs_from_workchain_label(lbl),
             "duration": duration,
             "pk": pk,
             "computer": comp,
@@ -1067,7 +1069,6 @@ _SUMMARY_CSV_COLUMNS = [
     "exit_status",
     "exit_message",
     "space_group",
-    "pearson",
     "phonon_pk",
     "has_phonon",
 ]
