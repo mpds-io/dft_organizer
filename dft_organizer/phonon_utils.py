@@ -170,6 +170,28 @@ def integrate_frequencies(
     }
 
 
+def _find_remote_computer(node, visited=None) -> str | None:
+    """Recursively find a non-local computer from a node's children."""
+    if visited is None:
+        visited = set()
+    if node.pk in visited:
+        return None
+    visited.add(node.pk)
+    for link in node.base.links.get_outgoing():
+        n = link.node
+        try:
+            comp = n.computer
+            if comp and comp.label not in ("local_machine", None):
+                return comp.label
+        except Exception:
+            pass
+        if link.link_type.name in ("CALL_CALC", "CALL_WORK"):
+            r = _find_remote_computer(n, visited)
+            if r:
+                return r
+    return None
+
+
 def _get_reduced_formula(symbols: list[str]) -> str:
     from collections import Counter
 
@@ -237,11 +259,7 @@ def get_phonon_workchain_summary(
 
     from dft_organizer.pricing import resolve_provider_and_rate
 
-    computer = None
-    try:
-        computer = wc.computer.label
-    except Exception:
-        pass
+    computer = _find_remote_computer(wc)
 
     duration = None
     if wc.ctime and wc.mtime:
@@ -249,7 +267,6 @@ def get_phonon_workchain_summary(
 
     cost = None
     currency = None
-    cloud_rate = None
     if computer:
         try:
             prov, rate, curr = resolve_provider_and_rate(
@@ -258,7 +275,6 @@ def get_phonon_workchain_summary(
             if curr is not None:
                 currency = curr
             if rate is not None:
-                cloud_rate = rate
                 if duration is not None and not (
                     isinstance(duration, float) and math.isnan(duration)
                 ):
@@ -275,7 +291,6 @@ def get_phonon_workchain_summary(
         "duration": duration,
         "cost": cost,
         "currency": currency,
-        "cloud_rate": cloud_rate,
         "chemical_formula": _get_reduced_formula(symbols),
         "space_group": space_group,
         "pearson": pearson,
@@ -367,14 +382,6 @@ def extract_frequencies_from_crystal_calc(pk: int) -> dict[str, Any]:
         "n_imaginary": n_imag,
         "n_qpoints": int(n_qpoints),
         "n_bands": int(n_modes),
-        # Also include CRYSTAL-specific summary columns
-        "has_phonons": True,
-        "phonon_freq_min": parsed["phonon_freq_min"],
-        "phonon_freq_max": parsed["phonon_freq_max"],
-        "phonon_freq_mean": parsed["phonon_freq_mean"],
-        "phonon_freq_std": parsed["phonon_freq_std"],
-        "phonon_n_imag": parsed["phonon_n_imag"],
-        "phonon_modes_count": parsed["phonon_modes_count"],
     }
 
 
@@ -431,7 +438,6 @@ def get_crystal_phonon_summary(
 
     cost = None
     currency = None
-    cloud_rate = None
     if computer:
         try:
             prov, rate, curr = resolve_provider_and_rate(
@@ -440,7 +446,6 @@ def get_crystal_phonon_summary(
             if curr is not None:
                 currency = curr
             if rate is not None:
-                cloud_rate = rate
                 if duration is not None and not (
                     isinstance(duration, float) and math.isnan(duration)
                 ):
@@ -458,7 +463,6 @@ def get_crystal_phonon_summary(
         "duration": duration,
         "cost": cost,
         "currency": currency,
-        "cloud_rate": cloud_rate,
         "chemical_formula": _get_reduced_formula(symbols),
         "space_group": space_group,
         "pearson": pearson,
@@ -481,26 +485,10 @@ def get_crystal_phonon_summary(
             "f_at_t_kjmol",
             "s_at_t_jkmol",
             "cv_at_t_jkmol",
-            "has_phonons",
-            "phonon_freq_min",
-            "phonon_freq_max",
-            "phonon_freq_mean",
-            "phonon_freq_std",
-            "phonon_n_imag",
-            "phonon_modes_count",
         ):
             summary[k] = None
         summary["t_eval"] = t_eval
         return summary
-
-    # CRYSTAL-specific columns
-    summary["has_phonons"] = freq_data["has_phonons"]
-    summary["phonon_freq_min"] = freq_data["phonon_freq_min"]
-    summary["phonon_freq_max"] = freq_data["phonon_freq_max"]
-    summary["phonon_freq_mean"] = freq_data["phonon_freq_mean"]
-    summary["phonon_freq_std"] = freq_data["phonon_freq_std"]
-    summary["phonon_n_imag"] = freq_data["phonon_n_imag"]
-    summary["phonon_modes_count"] = freq_data["phonon_modes_count"]
 
     # Thermodynamic integration columns
     summary["n_imaginary"] = freq_data["n_imaginary"]

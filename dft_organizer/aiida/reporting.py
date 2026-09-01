@@ -402,18 +402,9 @@ _null_summary_keys = [
     "output_path",
     "cost",
     "currency",
-    "cloud_rate",
-    "has_phonons",
-    "phonon_freq_min",
-    "phonon_freq_max",
-    "phonon_freq_mean",
-    "phonon_freq_std",
-    "phonon_n_imag",
-    "phonon_modes_count",
-    "total_energy",
-    "fermi_energy",
-    "magnetic_moment",
-    "n_iterations",
+    "mpds_id",
+    "phonon_pk",
+    "has_phonon",
 ]
 
 
@@ -526,7 +517,6 @@ def scan_aiida_calculations(
             if currency is not None:
                 summary["currency"] = currency
             if rate is not None:
-                summary["cloud_rate"] = rate
                 if duration is not None and not (
                     isinstance(duration, float) and math.isnan(duration)
                 ):
@@ -579,12 +569,10 @@ def _enrich_phonon_data(
         engine = summary.get("engine", "")
         try:
             if engine == "crystal":
-                # CRYSTAL: has_phonons already set by _enrich_crystal_extras
+                # CRYSTAL: has_phonon already set by _enrich_crystal_extras
                 summary["phonon_pk"] = summary.get("pk")
-                if summary.get("has_phonons") is None:
+                if summary.get("has_phonon") is None:
                     summary["has_phonon"] = False
-                else:
-                    summary["has_phonon"] = bool(summary["has_phonons"])
             else:
                 # FLEUR: walk provenance to parent PhonopyFleurWorkChain
                 calc = load_node(summary["uuid"])
@@ -879,22 +867,7 @@ def _enrich_crystal_extras(
                 summary["mpds_id"] = mpds_id
 
         if effective_type == "phonon":
-            text = _retrieved_file_text(calc, "OUTPUT")
-            if not text:
-                continue
-            try:
-                parsed = parse_phonon_from_output(text)
-            except Exception:
-                parsed = None
-            if parsed:
-                summary["has_phonons"] = parsed.get("has_phonons")
-                summary["phonon_freq_min"] = parsed.get("phonon_freq_min")
-                summary["phonon_freq_max"] = parsed.get("phonon_freq_max")
-                summary["phonon_freq_mean"] = parsed.get("phonon_freq_mean")
-                summary["phonon_freq_std"] = parsed.get("phonon_freq_std")
-                summary["phonon_n_imag"] = parsed.get("phonon_n_imag")
-                summary["phonon_modes_count"] = parsed.get("phonon_modes_count")
-                summary["temperature_k"] = parsed.get("temperature_k", 0.0)
+            summary["has_phonon"] = True
             phonon_count += 1
             if phonon_count % 25 == 0:
                 print(f"  Crystal phonon: {phonon_count}/{len(crystal_uuids)}")
@@ -1034,13 +1007,6 @@ _SUMMARY_CSV_COLUMNS = [
     "fermi_energy",
     "magnetic_moment",
     "n_iterations",
-    "has_phonons",
-    "phonon_freq_min",
-    "phonon_freq_max",
-    "phonon_freq_mean",
-    "phonon_freq_std",
-    "phonon_n_imag",
-    "phonon_modes_count",
     "a",
     "b",
     "c",
@@ -1062,7 +1028,6 @@ _SUMMARY_CSV_COLUMNS = [
     "temperature_k",
     "cost",
     "currency",
-    "cloud_rate",
     "label",
     "pk",
     "computer",
@@ -1358,13 +1323,6 @@ _PHONON_CSV_COLUMNS = [
     "s_at_t_jkmol",
     "cv_at_t_jkmol",
     "t_eval",
-    "has_phonons",
-    "phonon_freq_min",
-    "phonon_freq_max",
-    "phonon_freq_mean",
-    "phonon_freq_std",
-    "phonon_n_imag",
-    "phonon_modes_count",
 ]
 
 
