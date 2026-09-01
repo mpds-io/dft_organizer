@@ -126,9 +126,14 @@ def _build_date_filter(from_date: str | None, to_date: str | None) -> dict:
 
 
 def _formula_from_label(label: str | None) -> str | None:
-    if not label or ":" not in label:
+    if not label:
         return None
-    candidate = label.split(":")[0].strip()
+    if ":" in label:
+        candidate = label.split(":")[0].strip()
+    elif "/" in label:
+        candidate = label.split("/")[0].strip()
+    else:
+        return None
     if not candidate or len(candidate) > 15:
         return None
     if not candidate[0].isupper():
@@ -403,8 +408,6 @@ _null_summary_keys = [
     "cost",
     "currency",
     "mpds_id",
-    "phonon_pk",
-    "has_phonon",
 ]
 
 
@@ -545,48 +548,111 @@ def scan_aiida_calculations(
             summary_store, fleur_uuids, skip_displacement=skip_displacement
         )
 
+    # Add FLEUR PhonopyFleurWorkChain nodes as phonon rows
+    # (WorkChainNode, not CalcJobNode — missed by the main query)
+    from aiida.orm import WorkChainNode as _WCN
+
+    wc_filters: dict[str, Any] = {"process_type": {"like": "%phonopy.fleur%"}}
+    if date_filter:
+        wc_filters["ctime"] = date_filter
+    qb_wc = QueryBuilder()
+    qb_wc.append(
+        _WCN,
+        filters=wc_filters,
+        project=["id", "label", "uuid", "attributes", "ctime", "mtime"],
+    )
+    wc_rows = list(qb_wc.iterall())
+    if wc_rows:
+        print(f"Found {len(wc_rows)} FLEUR phonon WorkChains.")
+        existing_uuids = {s["uuid"] for s in summary_store}
+        added = 0
+        for wc_pk, wc_label, wc_uuid, wc_attrs, wc_ctime, wc_mtime in wc_rows:
+            if wc_uuid in existing_uuids:
+                continue
+            wc_exit = wc_attrs.get("exit_status") if wc_attrs else None
+            if skip_errors and wc_exit != 0:
+                continue
+            wc_dur = None
+            if wc_ctime and wc_mtime:
+                wc_dur = round((wc_mtime - wc_ctime).total_seconds() / 3600, 4)
+            summary_store.append(
+                {
+                    "uuid": wc_uuid,
+                    "label": wc_label,
+                    "engine": "fleur",
+                    "calc_type": "phonon",
+                    "chemical_formula": _formula_from_label(wc_label),
+                    "space_group": _sgs_from_workchain_label(wc_label),
+                    "duration": wc_dur,
+                    "pk": wc_pk,
+                    "computer": None,
+                    "calc_date": wc_ctime.strftime("%Y-%m-%d %H:%M:%S")
+                    if wc_ctime
+                    else None,
+                    "exit_status": wc_exit,
+                    "exit_message": str(wc_attrs.get("exit_message", ""))
+                    if wc_attrs
+                    else "",
+                    "temperature_k": 0.0,
+                }
+            )
+            for k in _null_summary_keys:
+                summary_store[-1][k] = None
+            added += 1
+        if added:
+            print(f"  Added {added} FLEUR phonon WorkChain rows.")
+
     phonon_rows = [s for s in summary_store if s.get("calc_type") == "phonon"]
     if phonon_rows:
         print(f"Enriching {len(phonon_rows)} phonon calculations...")
-        _enrich_phonon_data(summary_store)
+        _enrich_phonon_computer(
+            summary_store, provider=provider, machine_type=machine_type
+        )
 
     return summary_store
 
 
-def _enrich_phonon_data(
+def _enrich_phonon_computer(
     summary_store: list[dict[str, Any]],
     provider: str | None = None,
     machine_type: str | None = None,
 ) -> None:
-    """Enrich phonon rows with just phonon_pk and has_phonon.
+    """Fill computer/cost/currency for FLEUR phonon WorkChain rows.
 
-    For full thermodynamic properties, use dft-report-phonons CLI.
+    WorkChainNodes have no computer, so we walk children to find the
+    yascheduler computer used for the SCF calculations.
     """
+    try:
+        from dft_organizer.phonon_utils import _find_remote_computer
+    except ImportError:
+        return
+
+    from dft_organizer.pricing import resolve_provider_and_rate
+
     done = 0
     for summary in summary_store:
         if summary.get("calc_type") != "phonon":
             continue
-        engine = summary.get("engine", "")
+        if summary.get("engine") != "fleur":
+            continue
+        if summary.get("computer") is not None:
+            continue
         try:
-            if engine == "crystal":
-                # CRYSTAL: has_phonon already set by _enrich_crystal_extras
-                summary["phonon_pk"] = summary.get("pk")
-                if summary.get("has_phonon") is None:
-                    summary["has_phonon"] = False
-            else:
-                # FLEUR: walk provenance to parent PhonopyFleurWorkChain
-                calc = load_node(summary["uuid"])
-                wc = calc.caller
-                while wc is not None and wc.process_label != "PhonopyFleurWorkChain":
-                    wc = wc.caller
-                if wc is not None:
-                    summary["phonon_pk"] = wc.pk
-                    summary["has_phonon"] = True
-                else:
-                    summary["has_phonon"] = False
+            node = load_node(summary["uuid"])
+            comp = _find_remote_computer(node)
+            if comp:
+                summary["computer"] = comp
+                dur = summary.get("duration")
+                if dur is not None and not (isinstance(dur, float) and math.isnan(dur)):
+                    prov, rate, curr = resolve_provider_and_rate(
+                        comp, provider=provider, machine_type=machine_type
+                    )
+                    if curr:
+                        summary["currency"] = curr
+                    if rate:
+                        summary["cost"] = round(dur * rate, 2)
         except Exception as e:
-            print(f"  Failed phonon enrichment for PK {summary.get('pk')}: {e}")
-            summary["has_phonon"] = False
+            print(f"  Failed phonon computer lookup for PK {summary.get('pk')}: {e}")
         done += 1
         if done % 5 == 0:
             print(f"  Phonon enrichment: {done}")
@@ -867,7 +933,6 @@ def _enrich_crystal_extras(
                 summary["mpds_id"] = mpds_id
 
         if effective_type == "phonon":
-            summary["has_phonon"] = True
             phonon_count += 1
             if phonon_count % 25 == 0:
                 print(f"  Crystal phonon: {phonon_count}/{len(crystal_uuids)}")
@@ -1034,8 +1099,6 @@ _SUMMARY_CSV_COLUMNS = [
     "exit_status",
     "exit_message",
     "space_group",
-    "phonon_pk",
-    "has_phonon",
 ]
 
 # Columns kept out of the CSV (too verbose / not useful for the table).
