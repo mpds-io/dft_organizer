@@ -9,9 +9,9 @@ from aiida_crystal_dft.io.d12 import D12
 from aiida import load_profile as load_aiida_profile
 
 from dft_organizer.sevenzip import compress_with_7z, extract_7z
-from dft_organizer.aiida.reporting import generate_aiida_reports
 
 _aiida_loaded = False
+
 
 def _ensure_aiida():
     global _aiida_loaded
@@ -22,41 +22,50 @@ def _ensure_aiida():
 
 @unique
 class CalcLabel(StrEnum):
-    ELECTRON = 'ELECTRON'
-    PHONON = 'PHONON'
-    HFORM = 'HFORM'
-    ELASTIC = 'ELASTIC'
-    TRANSPORT = 'TRANSPORT'
-    STRUCT = 'STRUCT'
+    ELECTRON = "ELECTRON"
+    PHONON = "PHONON"
+    HFORM = "HFORM"
+    ELASTIC = "ELASTIC"
+    TRANSPORT = "TRANSPORT"
+    STRUCT = "STRUCT"
 
 
 FILES_FOR_TYPE = {
-    CalcLabel.ELECTRON: ['BAND.DAT', 'DOSS.DAT', 'fort.25'],
-    CalcLabel.PHONON: ['PHONON.DAT', 'FREQ.DAT'],
-    CalcLabel.ELASTIC: ['ELASTIC.DAT'],
-    CalcLabel.STRUCT: ['fort.34', 'fort.9'],
-    CalcLabel.TRANSPORT: ['SEEBECK.DAT', 'SIGMA.DAT', 'SIGMAS.DAT', 'KAPPA.DAT', 'TDF.DAT', 'README.txt'],
+    CalcLabel.ELECTRON: ["BAND.DAT", "DOSS.DAT", "fort.25"],
+    CalcLabel.PHONON: ["PHONON.DAT", "FREQ.DAT"],
+    CalcLabel.ELASTIC: ["ELASTIC.DAT"],
+    CalcLabel.STRUCT: ["fort.34", "fort.9"],
+    CalcLabel.TRANSPORT: [
+        "SEEBECK.DAT",
+        "SIGMA.DAT",
+        "SIGMAS.DAT",
+        "KAPPA.DAT",
+        "TDF.DAT",
+        "README.txt",
+    ],
 }
 
 _CRYSTAL_SYSTEMS = {
-    (1, 2): 'a',
-    (3, 15): 'm',
-    (16, 74): 'o',
-    (75, 142): 't',
-    (143, 194): 'h',
-    (195, 230): 'c',
+    (1, 2): "a",
+    (3, 15): "m",
+    (16, 74): "o",
+    (75, 142): "t",
+    (143, 194): "h",
+    (195, 230): "c",
 }
+
 
 def _crystal_letter(spg: int) -> str:
     for (lo, hi), letter in _CRYSTAL_SYSTEMS.items():
         if lo <= spg <= hi:
             return letter
-    return 'a'
+    return "a"
 
 
 def _get_reduced_formula(ase_atoms) -> str:
     from collections import Counter
     import math
+
     symbols = ase_atoms.get_chemical_symbols()
     order = list(dict.fromkeys(symbols))
     cnt = Counter(symbols)
@@ -65,7 +74,7 @@ def _get_reduced_formula(ase_atoms) -> str:
         g = math.gcd(g, v) if g else v
     if g > 1:
         cnt = {k: v // g for k, v in cnt.items()}
-    return ''.join(k if cnt[k] == 1 else f'{k}{cnt[k]}' for k in order)
+    return "".join(k if cnt[k] == 1 else f"{k}{cnt[k]}" for k in order)
 
 
 def _get_structure_metadata(uuid: str) -> tuple:
@@ -81,16 +90,19 @@ def _get_structure_metadata(uuid: str) -> tuple:
         formula = _get_reduced_formula(ase_atoms)
 
         import spglib
-        dataset = spglib.get_symmetry_dataset((
-            ase_atoms.cell,
-            ase_atoms.positions,
-            ase_atoms.get_atomic_numbers(),
-        ))
+
+        dataset = spglib.get_symmetry_dataset(
+            (
+                ase_atoms.cell,
+                ase_atoms.positions,
+                ase_atoms.get_atomic_numbers(),
+            )
+        )
         if dataset is None:
             return formula, None, None
 
         spg = dataset.number
-        centering = dataset.international[0] if dataset.international else 'P'
+        centering = dataset.international[0] if dataset.international else "P"
         natoms = len(dataset.std_types)
         pearson = f"{_crystal_letter(spg)}{centering}{natoms}"
         return formula, spg, pearson
@@ -106,12 +118,13 @@ def _resolve_from_provenance(uuid: str) -> tuple:
     Returns (formula, spg, None) or (None, None, None).
     """
     import re
+
     try:
         calc = load_node(uuid)
         caller = calc.caller
         if caller and caller.caller:
             gp = caller.caller
-            m = re.match(r'([A-Za-z]\w*)/(\d+)', gp.label or '')
+            m = re.match(r"([A-Za-z]\w*)/(\d+)", gp.label or "")
             if m:
                 return m.group(1), int(m.group(2)), None
     except Exception:
@@ -120,47 +133,47 @@ def _resolve_from_provenance(uuid: str) -> tuple:
 
 
 def _sanitize(name: str) -> str:
-    return re.sub(r'[^a-zA-Z0-9_.-]', '_', name).strip('_')
+    return re.sub(r"[^a-zA-Z0-9_.-]", "_", name).strip("_")
 
 
 def _url_safe(name: str) -> str:
-    return re.sub(r'[^a-zA-Z0-9_.-]', '', name)
+    return re.sub(r"[^a-zA-Z0-9_.-]", "", name)
 
 
 def _extract_base_formula(label: str) -> str:
-    return label.split('/')[0] if '/' in label else label
+    return label.split("/")[0] if "/" in label else label
 
 
 def _build_date_filter(from_date: str | None, to_date: str | None) -> dict:
     """Build AiiDA filter dict for ctime range. Dates in YYYY-MM-DD format."""
     filt = {}
     if from_date:
-        filt['>='] = datetime.strptime(from_date, '%Y-%m-%d')
+        filt[">="] = datetime.strptime(from_date, "%Y-%m-%d")
     if to_date:
-        filt['<='] = datetime.strptime(to_date, '%Y-%m-%d')
+        filt["<="] = datetime.strptime(to_date, "%Y-%m-%d")
     return filt
 
 
 def _determine_calc_type(calc_label: str) -> CalcLabel | None:
     label_lower = calc_label.lower()
-    if any(kw in label_lower for kw in ('band', 'doss', 'fort.25')):
+    if any(kw in label_lower for kw in ("band", "doss", "fort.25")):
         return CalcLabel.ELECTRON
-    if 'phonon' in label_lower:
+    if "phonon" in label_lower:
         return CalcLabel.PHONON
-    if 'elastic' in label_lower:
+    if "elastic" in label_lower:
         return CalcLabel.ELASTIC
-    if any(kw in label_lower for kw in ('geometry', 'fort.34', 'fort.9')):
+    if any(kw in label_lower for kw in ("geometry", "fort.34", "fort.9")):
         return CalcLabel.STRUCT
-    if any(kw in label_lower for kw in ('transport', 'seebeck', 'sigma')):
+    if any(kw in label_lower for kw in ("transport", "seebeck", "sigma")):
         return CalcLabel.TRANSPORT
     return None
 
 
 def _guess_calc_type_from_files(repo_folder) -> CalcLabel | None:
     names = set(repo_folder.list_object_names())
-    transport_files = {'SEEBECK.DAT', 'KAPPA.DAT', 'SIGMAS.DAT', 'TDF.DAT', 'SIGMA.DAT'}
-    electron_files = {'BAND.DAT', 'DOSS.DAT', 'fort.25'}
-    struct_files = {'fort.34', 'fort.9'}
+    transport_files = {"SEEBECK.DAT", "KAPPA.DAT", "SIGMAS.DAT", "TDF.DAT", "SIGMA.DAT"}
+    electron_files = {"BAND.DAT", "DOSS.DAT", "fort.25"}
+    struct_files = {"fort.34", "fort.9"}
     if names & transport_files:
         return CalcLabel.TRANSPORT
     if names & electron_files:
@@ -170,22 +183,62 @@ def _guess_calc_type_from_files(repo_folder) -> CalcLabel | None:
     return None
 
 
-def calculations_for_label(label: str, from_date: str | None = None, to_date: str | None = None) -> dict:
+_CALC_LABEL_TO_CALC_TYPE = {
+    CalcLabel.PHONON: "phonon",
+    CalcLabel.TRANSPORT: "transport",
+    CalcLabel.ELECTRON: "electron",
+    CalcLabel.ELASTIC: "elastic",
+    CalcLabel.STRUCT: "struct",
+    CalcLabel.HFORM: "hform",
+}
+
+
+def determine_calc_type_summary(label: str) -> str:
+    """Return a lowercase ``calc_type`` for the CSV summary.
+
+    Property keywords (phonon, transport, electron, elastic) take precedence
+    over geometry-optimization keywords, so labels like
+    ``"CRYSTAL optimization step: Phonon frequencies [1]"`` classify as
+    ``'phonon'`` (not ``'optimise'``). Geometry-optimization calculations
+    (``'geometry'``/``'optim'``/``'relax'``) classify as ``'optimise'`` only
+    when no property keyword matches. Falls back to ``'scf'``.
+    """
+    calc_label = _determine_calc_type(label)
+    if calc_label is not None and calc_label in (
+        CalcLabel.PHONON,
+        CalcLabel.TRANSPORT,
+        CalcLabel.ELECTRON,
+        CalcLabel.ELASTIC,
+    ):
+        return _CALC_LABEL_TO_CALC_TYPE[calc_label]
+    label_lower = label.lower()
+    if any(kw in label_lower for kw in ("geometry", "optim", "relax")):
+        return "optimise"
+    if calc_label is not None:
+        return _CALC_LABEL_TO_CALC_TYPE.get(calc_label, "scf")
+    return "scf"
+
+
+def calculations_for_label(
+    label: str, from_date: str | None = None, to_date: str | None = None
+) -> dict:
     """Exact match on label + optional ctime range, returns {label: [uuid, ...]}"""
     _ensure_aiida()
-    filters = {'label': {'==': label}}
+    filters = {"label": {"==": label}}
     date_filter = _build_date_filter(from_date, to_date)
     if date_filter:
-        filters['ctime'] = date_filter
+        filters["ctime"] = date_filter
     qb = QueryBuilder()
-    qb.append(CalcJobNode, filters=filters, project=['label', 'uuid'])
+    qb.append(CalcJobNode, filters=filters, project=["label", "uuid"])
     result = {}
     for lbl, uuid in qb.iterall():
         result.setdefault(lbl, []).append(uuid)
     return result
 
 
-def all_systems(from_date: str | None = None, to_date: str | None = None) -> dict[str, list]:
+def all_systems(
+    from_date: str | None = None, to_date: str | None = None
+) -> dict[str, list]:
     """
     Group CalcJobNodes by material (formula+spg+pearson).
     Calcs without structure are resolved via provenance and merged
@@ -196,9 +249,9 @@ def all_systems(from_date: str | None = None, to_date: str | None = None) -> dic
     filters = {}
     date_filter = _build_date_filter(from_date, to_date)
     if date_filter:
-        filters['ctime'] = date_filter
+        filters["ctime"] = date_filter
     qb = QueryBuilder()
-    qb.append(CalcJobNode, filters=filters or None, project=['label', 'uuid'])
+    qb.append(CalcJobNode, filters=filters or None, project=["label", "uuid"])
 
     all_meta = {}
     for lbl, uuid in qb.iterall():
@@ -221,8 +274,9 @@ def all_systems(from_date: str | None = None, to_date: str | None = None) -> dic
     # Second pass: for calcs still without pearson, try formula-only match
     # (provenance spg may differ from spglib-standardized spg of same material)
     import re as _re
+
     def _norm_f(f):
-        return ''.join(sorted(_re.findall(r'[A-Z][a-z]*', f)))
+        return "".join(sorted(_re.findall(r"[A-Z][a-z]*", f)))
 
     formula_pearson_map = {}
     for uuid, (lbl, formula, spg, pearson) in all_meta.items():
@@ -252,7 +306,7 @@ def all_systems(from_date: str | None = None, to_date: str | None = None) -> dic
 
 def _copy_file(repo_folder, fname, dst):
     if fname in repo_folder.list_object_names():
-        with repo_folder.open(fname, 'rb') as src, dst.open('wb') as dst_f:
+        with repo_folder.open(fname, "rb") as src, dst.open("wb") as dst_f:
             shutil.copyfileobj(src, dst_f)
         return True
     return False
@@ -280,7 +334,7 @@ def get_files(calc_label: str, uuid: str, dst_folder: Path) -> bool:
 
     try:
         input_dict = calc.inputs.parameters.get_dict()
-        input_path = type_folder / 'INPUT'
+        input_path = type_folder / "INPUT"
         try:
             basis_family = calc.inputs.basis_family
             basis_family.set_structure(calc.inputs.structure)
@@ -293,13 +347,16 @@ def get_files(calc_label: str, uuid: str, dst_folder: Path) -> bool:
         print(f"  (no parameters input for '{calc_label}', skipping INPUT)")
 
     output_files_in_repo = repo_folder.list_object_names()
-    output_dst = type_folder / 'OUTPUT'
-    if 'OUTPUT' in output_files_in_repo:
-        with repo_folder.open('OUTPUT', 'rb') as src, output_dst.open('wb') as dst:
+    output_dst = type_folder / "OUTPUT"
+    if "OUTPUT" in output_files_in_repo:
+        with repo_folder.open("OUTPUT", "rb") as src, output_dst.open("wb") as dst:
             shutil.copyfileobj(src, dst)
         copied_any = True
-    elif '_scheduler-stderr.txt' in output_files_in_repo:
-        with repo_folder.open('_scheduler-stderr.txt', 'rb') as src, output_dst.open('wb') as dst:
+    elif "_scheduler-stderr.txt" in output_files_in_repo:
+        with (
+            repo_folder.open("_scheduler-stderr.txt", "rb") as src,
+            output_dst.open("wb") as dst,
+        ):
             shutil.copyfileobj(src, dst)
         copied_any = True
     else:
@@ -313,7 +370,9 @@ def get_files(calc_label: str, uuid: str, dst_folder: Path) -> bool:
     return copied_any
 
 
-def generate_readme(system_formula: str, spg: int | None, pearson: str | None, root_folder: Path) -> None:
+def generate_readme(
+    system_formula: str, spg: int | None, pearson: str | None, root_folder: Path
+) -> None:
     """Write README.txt in exact MPDS format"""
     safe = _url_safe(system_formula)
     if spg and pearson:
@@ -347,11 +406,12 @@ def generate_readme(system_formula: str, spg: int | None, pearson: str | None, r
         "Pizzi, Cepellotti, Sabatini, Marzari, Kozinsky. Comp Mat Sci (2016),",
         "https://doi.org/10.1016/j.commatsci.2015.09.013",
     ]
-    (root_folder / 'README.txt').write_text('\n'.join(lines))
+    (root_folder / "README.txt").write_text("\n".join(lines))
 
 
 def _is_calc_failed(uuid: str) -> bool:
     from aiida.orm import load_node
+
     calc = load_node(uuid)
     exit_status = calc.exit_status
     return exit_status is not None and exit_status != 0
@@ -424,7 +484,7 @@ def export_system(calcs: list, output_dir: Path, skip_errors: bool = False) -> b
 def launch_aiida_export(
     label: str | None = None,
     export_all: bool = False,
-    output_dir: str | Path = '/tmp',
+    output_dir: str | Path = "/tmp",
     from_date: str | None = None,
     to_date: str | None = None,
     skip_errors: bool = False,
@@ -457,7 +517,9 @@ def launch_aiida_export(
     elif label:
         calcs = calculations_for_label(label, from_date=from_date, to_date=to_date)
         if not calcs:
-            print(f"Error: no calculations found with label '{label}' in AiiDA database.")
+            print(
+                f"Error: no calculations found with label '{label}' in AiiDA database."
+            )
             return
         flat = [(lbl, uuid) for lbl, uuids in calcs.items() for uuid in uuids]
         export_system(flat, output_dir, skip_errors=skip_errors)
@@ -467,6 +529,8 @@ def launch_aiida_export(
 
     if generate_report:
         print("\n--- Generating reports from AiiDA data ---")
+        from dft_organizer.aiida.reporting import generate_aiida_reports
+
         generate_aiida_reports(
             label=label if not export_all else None,
             from_date=from_date,
