@@ -347,7 +347,7 @@ def scan_phonon_workchains(
         filtered = []
         for pk, label, attrs, ctime, mtime in rows:
             exit_status = attrs.get("exit_status") if attrs else None
-            if exit_status is None or exit_status == 0:
+            if exit_status == 0:
                 filtered.append((pk, label, attrs, ctime, mtime))
         rows = filtered
         print(f"After skip_errors: {len(rows)} nodes.")
