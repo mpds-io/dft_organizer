@@ -1423,6 +1423,14 @@ def save_aiida_phonon_reports(
             row.setdefault(col, None)
 
     df = pl.DataFrame(summary_store)
+    # Deduplicate: keep only the latest calculation per (formula, engine)
+    if (
+        "calc_date" in df.columns
+        and "chemical_formula" in df.columns
+        and "engine" in df.columns
+    ):
+        df = df.sort("calc_date").group_by(["chemical_formula", "engine"]).last()
+        df = df.sort(["chemical_formula", "engine"])
     ordered = [c for c in _PHONON_CSV_COLUMNS if c in df.columns]
     remaining = [c for c in df.columns if c not in _PHONON_CSV_COLUMNS]
     df = df.select(ordered + remaining)
