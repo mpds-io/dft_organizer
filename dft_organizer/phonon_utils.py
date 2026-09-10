@@ -84,6 +84,14 @@ def extract_frequencies_from_workchain(
     all_freqs = np.array(mesh_data["frequencies"])
     qpoints = np.array(mesh_data["qpoints"])
 
+    # Also compute Gamma-point (q=0,0,0) explicitly — may not be in the mesh
+    try:
+        ph.run_qpoints([[0.0, 0.0, 0.0]])
+        gamma_data = ph.get_qpoints_dict()
+        gamma_freqs = np.array(gamma_data["frequencies"])[0]  # shape (n_bands,)
+    except Exception:
+        gamma_freqs = None
+
     n_imag = int(np.sum(all_freqs < threshold))
 
     spg_info = None
@@ -96,6 +104,7 @@ def extract_frequencies_from_workchain(
     return {
         "freqs_cm1": all_freqs,
         "qpoints": qpoints,
+        "gamma_freqs_cm1": gamma_freqs,
         "n_imaginary": n_imag,
         "n_qpoints": int(all_freqs.shape[0]),
         "n_bands": int(all_freqs.shape[1]),
@@ -208,27 +217,32 @@ def _get_reduced_formula(symbols: list[str]) -> str:
 def extract_gamma_freqs(
     freqs_cm1: np.ndarray,
     qpoints: np.ndarray | None = None,
+    gamma_freqs_cm1: np.ndarray | None = None,
     threshold_cm1: float = 1.0,
 ) -> list[float]:
     """Extract optical mode frequencies at the Gamma point (q=0,0,0).
 
     Args:
-        freqs_cm1: (n_q, n_bands) array in cm^-1
+        freqs_cm1: (n_q, n_bands) array in cm^-1 (mesh frequencies)
         qpoints: (n_q, 3) array of q-point coordinates, or None
             (if None, assume first q-point is Gamma — CRYSTAL case)
+        gamma_freqs_cm1: (n_bands,) array of Gamma-point frequencies, or None
+            (if provided, used directly — more accurate than searching mesh)
         threshold_cm1: frequencies below this (absolute) are treated as
             acoustic (zero) and excluded
 
     Returns: sorted list of optical frequencies at Gamma (cm^-1)
     """
-    if qpoints is not None:
+    if gamma_freqs_cm1 is not None:
+        gamma_freqs = gamma_freqs_cm1
+    elif qpoints is not None:
         # Find q-point closest to (0,0,0)
         dists = np.sum(qpoints**2, axis=1)
         gamma_idx = int(np.argmin(dists))
+        gamma_freqs = freqs_cm1[gamma_idx]
     else:
-        gamma_idx = 0
+        gamma_freqs = freqs_cm1[0]
 
-    gamma_freqs = freqs_cm1[gamma_idx]
     # Keep only optical modes (|freq| > threshold)
     optical = sorted([float(f) for f in gamma_freqs if abs(f) > threshold_cm1])
     return optical
@@ -450,7 +464,9 @@ def get_phonon_workchain_summary(
 
     # Gamma-point optical frequencies
     gamma_opt = extract_gamma_freqs(
-        freq_data["freqs_cm1"], qpoints=freq_data.get("qpoints")
+        freq_data["freqs_cm1"],
+        qpoints=freq_data.get("qpoints"),
+        gamma_freqs_cm1=freq_data.get("gamma_freqs_cm1"),
     )
     for i in range(12):
         summary[f"gamma_opt_{i + 1}_cm1"] = (
