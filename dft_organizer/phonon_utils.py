@@ -201,17 +201,36 @@ def _find_remote_computer(node, visited=None) -> str | None:
     return None
 
 
-def _get_reduced_formula(symbols: list[str]) -> str:
+def _get_reduced_formula(symbols: list[str], label: str | None = None) -> str:
+    """Return chemical formula, preferring label-derived formula for consistency."""
+    if label:
+        # Extract formula from label like 'MgO/225 - phonons' or 'ZnO/186: Phonon frequencies [1]'
+        import re
+
+        m = re.match(r"^([A-Za-z0-9]+)/\d+", label)
+        if m:
+            return m.group(1)
+
+    # Fallback: Hill notation from symbols
     from collections import Counter
 
     cnt = Counter(symbols)
-    order = list(dict.fromkeys(symbols))
     g = 0
     for v in cnt.values():
         g = math.gcd(g, v) if g else v
     if g > 1:
         cnt = {k: v // g for k, v in cnt.items()}
-    return "".join(k if cnt[k] == 1 else f"{k}{cnt[k]}" for k in order)
+
+    elements = sorted(cnt.keys())
+    if "C" in elements:
+        ordered = ["C"]
+        if "H" in elements:
+            ordered.append("H")
+        ordered += [e for e in elements if e not in ("C", "H")]
+    else:
+        ordered = elements
+
+    return "".join(k if cnt[k] == 1 else f"{k}{cnt[k]}" for k in ordered)
 
 
 def extract_gamma_freqs(
@@ -420,7 +439,7 @@ def get_phonon_workchain_summary(
         "duration": duration,
         "cost": cost,
         "currency": currency,
-        "chemical_formula": _get_reduced_formula(symbols),
+        "chemical_formula": _get_reduced_formula(symbols, label=wc.label),
         "space_group": space_group,
         "pearson": pearson,
         "a": round(cellpar[0], 6),
@@ -475,7 +494,9 @@ def get_phonon_workchain_summary(
     summary["gamma_n_optical"] = len(gamma_opt)
 
     # MPDS experimental reference
-    mpds_ref = get_mpds_phonon_reference(_get_reduced_formula(symbols), space_group)
+    mpds_ref = get_mpds_phonon_reference(
+        _get_reduced_formula(symbols, label=wc.label), space_group
+    )
     summary["mpds_lo_cm1"] = ", ".join(f"{v:.1f}" for v in mpds_ref["lo_cm1"]) or None
     summary["mpds_to_cm1"] = ", ".join(f"{v:.1f}" for v in mpds_ref["to_cm1"]) or None
     summary["mpds_n_entries"] = mpds_ref["n_entries"]
@@ -617,7 +638,7 @@ def get_crystal_phonon_summary(
         "duration": duration,
         "cost": cost,
         "currency": currency,
-        "chemical_formula": _get_reduced_formula(symbols),
+        "chemical_formula": _get_reduced_formula(symbols, label=calc.label),
         "space_group": space_group,
         "pearson": pearson,
         "a": round(cellpar[0], 6),
@@ -666,7 +687,9 @@ def get_crystal_phonon_summary(
     summary["gamma_n_optical"] = len(gamma_opt)
 
     # MPDS experimental reference
-    mpds_ref = get_mpds_phonon_reference(_get_reduced_formula(symbols), space_group)
+    mpds_ref = get_mpds_phonon_reference(
+        _get_reduced_formula(symbols, label=calc.label), space_group
+    )
     summary["mpds_lo_cm1"] = ", ".join(f"{v:.1f}" for v in mpds_ref["lo_cm1"]) or None
     summary["mpds_to_cm1"] = ", ".join(f"{v:.1f}" for v in mpds_ref["to_cm1"]) or None
     summary["mpds_n_entries"] = mpds_ref["n_entries"]
