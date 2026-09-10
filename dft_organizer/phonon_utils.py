@@ -205,6 +205,121 @@ def _get_reduced_formula(symbols: list[str]) -> str:
     return "".join(k if cnt[k] == 1 else f"{k}{cnt[k]}" for k in order)
 
 
+def extract_gamma_freqs(
+    freqs_cm1: np.ndarray,
+    qpoints: np.ndarray | None = None,
+    threshold_cm1: float = 1.0,
+) -> list[float]:
+    """Extract optical mode frequencies at the Gamma point (q=0,0,0).
+
+    Args:
+        freqs_cm1: (n_q, n_bands) array in cm^-1
+        qpoints: (n_q, 3) array of q-point coordinates, or None
+            (if None, assume first q-point is Gamma — CRYSTAL case)
+        threshold_cm1: frequencies below this (absolute) are treated as
+            acoustic (zero) and excluded
+
+    Returns: sorted list of optical frequencies at Gamma (cm^-1)
+    """
+    if qpoints is not None:
+        # Find q-point closest to (0,0,0)
+        dists = np.sum(qpoints**2, axis=1)
+        gamma_idx = int(np.argmin(dists))
+    else:
+        gamma_idx = 0
+
+    gamma_freqs = freqs_cm1[gamma_idx]
+    # Keep only optical modes (|freq| > threshold)
+    optical = sorted([float(f) for f in gamma_freqs if abs(f) > threshold_cm1])
+    return optical
+
+
+_MPDS_CACHE: dict[str, dict] = {}
+
+
+def get_mpds_phonon_reference(formula: str, sgs: int | None = None) -> dict[str, Any]:
+    """Query MPDS for experimental phonon frequencies (LO/TO).
+
+    Returns dict with:
+        lo_cm1: list of longitudinal optical frequencies (cm^-1)
+        to_cm1: list of transverse optical frequencies (cm^-1)
+        all_cm1: list of all phonon frequencies (cm^-1)
+        n_entries: number of MPDS entries
+    """
+    cache_key = f"{formula}_{sgs}"
+    if cache_key in _MPDS_CACHE:
+        return _MPDS_CACHE[cache_key]
+
+    import os
+
+    if "MPDS_KEY" not in os.environ:
+        _MPDS_CACHE[cache_key] = {
+            "lo_cm1": [],
+            "to_cm1": [],
+            "all_cm1": [],
+            "n_entries": 0,
+        }
+        return _MPDS_CACHE[cache_key]
+
+    try:
+        from mpds_client import MPDSDataRetrieval
+
+        client = MPDSDataRetrieval()
+        query = {"formulae": formula, "props": "phonons"}
+        if sgs is not None:
+            query["sgs"] = sgs
+        results = client.get_data(query)
+    except Exception as e:
+        print(f"  MPDS query failed for {formula}: {e}")
+        _MPDS_CACHE[cache_key] = {
+            "lo_cm1": [],
+            "to_cm1": [],
+            "all_cm1": [],
+            "n_entries": 0,
+        }
+        return _MPDS_CACHE[cache_key]
+
+    lo_cm1 = []
+    to_cm1 = []
+    all_cm1 = []
+
+    for entry in results:
+        # entry: [phase_id, formula, sgs, sample_id, property_name, unit, value]
+        if len(entry) < 7:
+            continue
+        prop_name = str(entry[4]).lower()
+        value = entry[6]
+        unit = str(entry[5]).lower()
+
+        try:
+            val = float(value)
+        except (TypeError, ValueError):
+            continue
+
+        # MPDS stores wavenumber in mm^-1, convert to cm^-1
+        if "mm" in unit:
+            val_cm1 = val * 10.0
+        elif "cm" in unit:
+            val_cm1 = val
+        else:
+            val_cm1 = val
+
+        all_cm1.append(val_cm1)
+        if "longitudinal" in prop_name:
+            lo_cm1.append(val_cm1)
+        elif "transverse" in prop_name:
+            to_cm1.append(val_cm1)
+
+    result = {
+        "lo_cm1": sorted(lo_cm1),
+        "to_cm1": sorted(to_cm1),
+        "all_cm1": sorted(all_cm1),
+        "n_entries": len(results),
+    }
+    _MPDS_CACHE[cache_key] = result
+    return result
+
+
 def _sgs_from_label(label: str | None) -> int | None:
     """Extract space-group number from a label like 'ZnO/186: Phonon frequencies [1]'."""
     if not label or "/" not in label:
@@ -333,6 +448,22 @@ def get_phonon_workchain_summary(
     summary["cv_at_t_jkmol"] = thermo["cv_at_t_jkmol"]
     summary["t_eval"] = t_eval
 
+    # Gamma-point optical frequencies
+    gamma_opt = extract_gamma_freqs(
+        freq_data["freqs_cm1"], qpoints=freq_data.get("qpoints")
+    )
+    for i in range(12):
+        summary[f"gamma_opt_{i + 1}_cm1"] = (
+            round(gamma_opt[i], 2) if i < len(gamma_opt) else None
+        )
+    summary["gamma_n_optical"] = len(gamma_opt)
+
+    # MPDS experimental reference
+    mpds_ref = get_mpds_phonon_reference(_get_reduced_formula(symbols), space_group)
+    summary["mpds_lo_cm1"] = ", ".join(f"{v:.1f}" for v in mpds_ref["lo_cm1"]) or None
+    summary["mpds_to_cm1"] = ", ".join(f"{v:.1f}" for v in mpds_ref["to_cm1"]) or None
+    summary["mpds_n_entries"] = mpds_ref["n_entries"]
+
     return summary
 
 
@@ -340,7 +471,8 @@ def extract_frequencies_from_crystal_calc(pk: int) -> dict[str, Any]:
     """Extract phonon frequencies from a CRYSTAL phonon CalcJobNode.
 
     Parses the MODES block from the retrieved OUTPUT file and groups
-    frequencies into q-points (each block of n_modes lines = one q-point).
+    frequencies into q-points by detecting branch_index resets
+    (each q-point starts with branch_index=1).
 
     Returns dict with freqs_cm1, n_imaginary, n_qpoints, n_bands.
     """
@@ -358,30 +490,36 @@ def extract_frequencies_from_crystal_calc(pk: int) -> dict[str, Any]:
         return {"error": f"PK {pk}: no phonon frequencies in OUTPUT"}
 
     details = parsed.get("details", [])
-    n_modes = parsed.get("phonon_modes_count", 0)
-    if not details or n_modes == 0:
+    if not details:
         return {"error": f"PK {pk}: empty phonon details"}
 
-    # Group details into q-points: each block of n_modes entries = one q-point
-    n_qpoints = len(details) // n_modes
-    freqs_thz = []
-    for q in range(n_qpoints):
-        block = details[q * n_modes : (q + 1) * n_modes]
-        freqs_thz.append([d["frequency_thz"] for d in block])
+    # Group details into q-points by branch_index reset
+    qpoints_freqs = []
+    current_q = []
+    for d in details:
+        if d["branch_index"] == 1 and current_q:
+            qpoints_freqs.append(current_q)
+            current_q = []
+        current_q.append(d["frequency_thz"])
+    if current_q:
+        qpoints_freqs.append(current_q)
 
-    freqs_thz_arr = np.array(freqs_thz)
+    if not qpoints_freqs:
+        return {"error": f"PK {pk}: could not group frequencies into q-points"}
+
+    freqs_thz_arr = np.array(qpoints_freqs)
     # Convert THz → cm⁻¹
     from ab_initio_calculations.calculations.phonon_thermo import THZ_TO_CM1
 
-    freqs_cm1 = freqs_thz_arr / THZ_TO_CM1
+    freqs_cm1 = freqs_thz_arr * THZ_TO_CM1
 
     n_imag = int(np.sum(freqs_cm1 < DEFAULT_THRESHOLD_CM1))
 
     return {
         "freqs_cm1": freqs_cm1,
         "n_imaginary": n_imag,
-        "n_qpoints": int(n_qpoints),
-        "n_bands": int(n_modes),
+        "n_qpoints": int(freqs_cm1.shape[0]),
+        "n_bands": int(freqs_cm1.shape[1]),
     }
 
 
@@ -477,37 +615,45 @@ def get_crystal_phonon_summary(
     freq_data = extract_frequencies_from_crystal_calc(pk)
     if "error" in freq_data:
         summary["error"] = freq_data["error"]
-        for k in (
-            "n_imaginary",
-            "n_qpoints",
-            "n_bands",
-            "zpe_kjmol",
-            "f_at_t_kjmol",
-            "s_at_t_jkmol",
-            "cv_at_t_jkmol",
-        ):
-            summary[k] = None
-        summary["t_eval"] = t_eval
+        summary["n_imaginary"] = None
+        summary["n_qpoints"] = None
+        summary["n_bands"] = None
+        summary["zpe_kjmol"] = None
+        summary["f_at_t_kjmol"] = None
+        summary["s_at_t_jkmol"] = None
+        summary["cv_at_t_jkmol"] = None
+        summary["t_eval"] = None
+        for i in range(12):
+            summary[f"gamma_opt_{i + 1}_cm1"] = None
+        summary["gamma_n_optical"] = None
+        summary["mpds_lo_cm1"] = None
+        summary["mpds_to_cm1"] = None
+        summary["mpds_n_entries"] = 0
         return summary
 
-    # Thermodynamic integration columns
+    # CRYSTAL SCELPHONO = Gamma-point only, thermodynamics not meaningful
     summary["n_imaginary"] = freq_data["n_imaginary"]
     summary["n_qpoints"] = freq_data["n_qpoints"]
     summary["n_bands"] = freq_data["n_bands"]
+    summary["zpe_kjmol"] = None
+    summary["f_at_t_kjmol"] = None
+    summary["s_at_t_jkmol"] = None
+    summary["cv_at_t_jkmol"] = None
+    summary["t_eval"] = None
 
-    thermo = integrate_frequencies(
-        freq_data["freqs_cm1"],
-        t_max=t_max,
-        t_step=t_step,
-        t_min=t_min,
-        method=method,
-        t_eval=t_eval,
-    )
-    summary["zpe_kjmol"] = thermo["zpe_kjmol"]
-    summary["f_at_t_kjmol"] = thermo["f_at_t_kjmol"]
-    summary["s_at_t_jkmol"] = thermo["s_at_t_jkmol"]
-    summary["cv_at_t_jkmol"] = thermo["cv_at_t_jkmol"]
-    summary["t_eval"] = t_eval
+    # Gamma-point optical frequencies (CRYSTAL is already Gamma-only)
+    gamma_opt = extract_gamma_freqs(freq_data["freqs_cm1"], qpoints=None)
+    for i in range(12):
+        summary[f"gamma_opt_{i + 1}_cm1"] = (
+            round(gamma_opt[i], 2) if i < len(gamma_opt) else None
+        )
+    summary["gamma_n_optical"] = len(gamma_opt)
+
+    # MPDS experimental reference
+    mpds_ref = get_mpds_phonon_reference(_get_reduced_formula(symbols), space_group)
+    summary["mpds_lo_cm1"] = ", ".join(f"{v:.1f}" for v in mpds_ref["lo_cm1"]) or None
+    summary["mpds_to_cm1"] = ", ".join(f"{v:.1f}" for v in mpds_ref["to_cm1"]) or None
+    summary["mpds_n_entries"] = mpds_ref["n_entries"]
 
     return summary
 
