@@ -10,6 +10,10 @@ import numpy as np
 DEFAULT_MESH = [8, 8, 8]
 DEFAULT_THRESHOLD_CM1 = -1.67
 VaspToCm = 521.4708336735473
+_EV_TO_CM1 = 8065.544
+_MEV_TO_CM1 = 8.065544
+_THZ_TO_CM1 = 33.35641
+_MAX_PHONON_CM1 = 4000.0
 
 _CRYSTAL_SYSTEMS = {
     (1, 2): "a",
@@ -275,9 +279,18 @@ def get_mpds_phonon_reference(formula: str, sgs: int | None = None) -> dict[str,
 
     Returns dict with:
         lo_cm1: list of longitudinal optical frequencies (cm^-1)
-        to_cm1: list of transverse optical frequencies (cm^-1)
+        to_cm1: list of transverse optical frequencies (cm^-1);
+            when MPDS has no transverse-attributed entries, filled from
+            unmarked "optical phonon" frequencies (see fallback below)
         all_cm1: list of all phonon frequencies (cm^-1)
+        unmarked_cm1: list of frequencies from entries without LO/TO
+            attribution (e.g. "wavenumber of optical phonon"), (cm^-1)
         n_entries: number of MPDS entries
+
+    Unit conversion to cm^-1: mm^-1 x10, meV x8.0655, eV x8065.544,
+    THz x33.35641; cm^-1 values pass through. Frequencies outside
+    [0, 4000] cm^-1 are discarded (electronic transitions mislabelled
+    as phonons in MPDS).
     """
     cache_key = f"{formula}_{sgs}"
     if cache_key in _MPDS_CACHE:
@@ -315,6 +328,7 @@ def get_mpds_phonon_reference(formula: str, sgs: int | None = None) -> dict[str,
     lo_cm1 = []
     to_cm1 = []
     all_cm1 = []
+    unmarked_cm1 = []
 
     for entry in results:
         # entry: [phase_id, formula, sgs, sample_id, property_name, unit, value]
@@ -329,24 +343,44 @@ def get_mpds_phonon_reference(formula: str, sgs: int | None = None) -> dict[str,
         except (TypeError, ValueError):
             continue
 
-        # MPDS stores wavenumber in mm^-1, convert to cm^-1
+        # Unit conversion to cm^-1 (MPDS stores wavenumber in mm^-1)
         if "mm" in unit:
             val_cm1 = val * 10.0
         elif "cm" in unit:
             val_cm1 = val
+        elif "mev" in unit:
+            val_cm1 = val * _MEV_TO_CM1
+        elif "ev" in unit:
+            val_cm1 = val * _EV_TO_CM1
+        elif "thz" in unit:
+            val_cm1 = val * _THZ_TO_CM1
         else:
             val_cm1 = val
+
+        # Sanity filter: phonon frequencies never exceed ~4000 cm^-1 even for
+        # the lightest atoms; higher values are electronic transitions that
+        # occasionally leak into MPDS "phonon" properties
+        if val_cm1 < 0.0 or val_cm1 > _MAX_PHONON_CM1:
+            continue
 
         all_cm1.append(val_cm1)
         if "longitudinal" in prop_name:
             lo_cm1.append(val_cm1)
         elif "transverse" in prop_name:
             to_cm1.append(val_cm1)
+        elif "phonon" in prop_name:
+            unmarked_cm1.append(val_cm1)
+
+    # Fallback: entries without LO/TO attribution (e.g. "wavenumber of
+    # optical phonon") approximate TO modes; use them to fill an empty TO list
+    if not to_cm1 and unmarked_cm1:
+        to_cm1 = unmarked_cm1
 
     result = {
         "lo_cm1": sorted(lo_cm1),
         "to_cm1": sorted(to_cm1),
         "all_cm1": sorted(all_cm1),
+        "unmarked_cm1": sorted(unmarked_cm1),
         "n_entries": len(results),
     }
     _MPDS_CACHE[cache_key] = result
