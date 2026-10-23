@@ -20,7 +20,7 @@ def archive_and_save(
     root_dir: Path,
     make_report: bool = True,
     aiida: bool = False,
-    skip_errors: bool = False
+    skip_errors: bool = False,
 ) -> Optional[pl.DataFrame]:
     """
     Archive directory, create report
@@ -35,11 +35,8 @@ def archive_and_save(
     error_dict_fleur = {}
 
     if make_report:
-        summary_store, error_dict_crystal, error_dict_fleur = scan_calculations(
-            root_path,
-            aiida=aiida,
-            verbose=True,
-            skip_errors=skip_errors
+        summary_store, error_dict_crystal, error_dict_fleur, *_ = scan_calculations(
+            root_path, aiida=aiida, verbose=True, skip_errors=skip_errors
         )
         save_reports(root_path, summary_store, error_dict_crystal, error_dict_fleur)
 
@@ -49,7 +46,7 @@ def archive_and_save(
     else:
         print(f"Failed to archive root directory: {root_path}")
 
-     # safe df creation
+    # safe df creation
     if summary_store:
         nested_keys = ["cell", "positions", "pbc", "numbers", "symbols"]
         flat_summary = []
@@ -76,7 +73,10 @@ def archive_and_save(
 
 
 def restore_archives_iterative(
-    start_path: Path, generate_reports: bool = True, aiida: bool = False, skip_errors: bool = False
+    start_path: Path,
+    generate_reports: bool = True,
+    aiida: bool = False,
+    skip_errors: bool = False,
 ):
     """Iteratively restore archives level by level"""
     start_path = Path(start_path)

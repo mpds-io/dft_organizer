@@ -13,7 +13,9 @@ import pg8000
 import numpy as np
 
 from dft_organizer.aiida_utils import extract_uuid_from_path
+from dft_organizer.structures import get_space_group_robust, nullify_right_angles
 from dft_organizer.utils import detect_engine, get_table_string
+from dft_organizer.aiida.reporting import _extract_mpds_id_from_provenance
 from dft_organizer.pricing import get_cloud_rate, get_cost
 from dft_organizer.crystal_parser import (
     parse_crystal_output,
@@ -21,12 +23,15 @@ from dft_organizer.crystal_parser import (
     make_report as make_report_crystal,
     print_report as print_report_crystal,
     save_report as save_report_crystal,
+    parse_phonon_output as parse_phonon_output_crystal,
+    parse_phonon_from_output,
 )
 from dft_organizer.fleur_parser import (
     parse_fleur_output,
     make_report as make_report_fleur,
     print_report as print_report_fleur,
     save_report as save_report_fleur,
+    parse_phonon_output as parse_phonon_output_fleur,
 )
 from dft_organizer.aiida.aiida_links_tree import (
     load_db_config,
@@ -80,6 +85,7 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
         summary["space_group"] = None
         summary["cost_eur"] = None
         summary["calc_date"] = None
+        summary["mpds_id"] = None
 
         try:
             calc = load_node(calc_uuid)
@@ -92,14 +98,20 @@ def enrich_with_aiida_data(summary_store: list[dict[str, Any]]) -> None:
         try:
             struct = calc.inputs.structure
             ase_atoms = struct.get_ase()
-            import spglib
-            dataset = spglib.get_symmetry_dataset((
+            sg = get_space_group_robust(
                 ase_atoms.cell,
                 ase_atoms.positions,
                 ase_atoms.get_atomic_numbers(),
-            ))
-            if dataset is not None:
-                summary["space_group"] = dataset.number
+            )
+            if sg is not None:
+                summary["space_group"] = sg
+        except Exception:
+            pass
+
+        try:
+            mpds_id = _extract_mpds_id_from_provenance(calc)
+            if mpds_id:
+                summary["mpds_id"] = mpds_id
         except Exception:
             pass
 
@@ -128,8 +140,8 @@ def _fetch_fleur_seebeck(calc) -> dict | None:
         ptype = getattr(node, 'process_type', '') or ''
         if 'FleurDOSLocalWorkChain' in ptype:
             try:
-                sd = node.outputs.output_seebeck.get_dict()
-                pd = node.outputs.output_dos_local_wc_para.get_dict()
+                sd = node.outputs.output_seebeck.base.attributes.all
+                pd = node.outputs.output_dos_local_wc_para.base.attributes.all
                 return {
                     "seebeck_coefficient_uvk": sd.get("seebeck_coefficient_uvk"),
                     "mu_ev": sd.get("mu_ev"),
@@ -206,6 +218,116 @@ def enrich_fleur_with_displacement(summary_store: list[dict[str, Any]]) -> None:
         conn.close()
 
 
+def _enrich_summary_with_phonons(
+    summary: dict[str, Any],
+    calc_dir: Path,
+    phonon_store: list[dict[str, Any]],
+    engine: str,
+) -> None:
+    """Detect phonon output files in the calculation directory, parse them,
+    add compact phonon fields to ``summary`` in-place, and append detailed
+    per-mode records to ``phonon_store``.
+
+    When no phonon files are found (or the parser returns ``None``), the
+    summary gets ``has_phonons=False`` and ``phonon_*`` fields set to ``None``,
+    and nothing is appended to ``phonon_store``.
+    """
+    summary.setdefault("has_phonons", False)
+    summary.setdefault("phonon_freq_min", None)
+    summary.setdefault("phonon_freq_max", None)
+    summary.setdefault("phonon_freq_mean", None)
+    summary.setdefault("phonon_freq_std", None)
+    summary.setdefault("phonon_n_imag", None)
+    summary.setdefault("phonon_modes_count", None)
+    summary.setdefault("temperature_k", 0.0)
+
+    try:
+        if engine == "crystal":
+            parsed = parse_phonon_output_crystal(calc_dir)
+            if not parsed:
+                output_path = summary.get("output_path")
+                if output_path:
+                    try:
+                        text = Path(output_path).read_text(encoding="utf-8", errors="ignore")
+                        parsed = parse_phonon_from_output(text)
+                    except Exception:
+                        parsed = None
+        elif engine == "fleur":
+            parsed = parse_phonon_output_fleur(calc_dir)
+        else:
+            parsed = None
+    except Exception as e:
+        print(f"Phonon parse error in {calc_dir}: {e}")
+        parsed = None
+
+    if not parsed:
+        return
+
+    summary["has_phonons"] = parsed.get("has_phonons", False)
+    summary["phonon_freq_min"] = parsed.get("phonon_freq_min")
+    summary["phonon_freq_max"] = parsed.get("phonon_freq_max")
+    summary["phonon_freq_mean"] = parsed.get("phonon_freq_mean")
+    summary["phonon_freq_std"] = parsed.get("phonon_freq_std")
+    summary["phonon_n_imag"] = parsed.get("phonon_n_imag")
+    summary["phonon_modes_count"] = parsed.get("phonon_modes_count")
+    summary["temperature_k"] = parsed.get("temperature_k", 0.0)
+
+    details = parsed.get("details") or []
+    uuid = summary.get("uuid")
+    formula = summary.get("chemical_formula")
+    for d in details:
+        record = {
+            "uuid": uuid,
+            "engine": engine,
+            "chemical_formula": formula,
+            "output_path": parsed.get("source_file"),
+            "q_point": d.get("q_point"),
+            "branch_index": d.get("branch_index"),
+            "frequency_thz": d.get("frequency_thz"),
+            "is_imaginary": d.get("is_imaginary"),
+            "temperature_k": d.get("temperature_k"),
+            "modes_count": parsed.get("phonon_modes_count"),
+        }
+        phonon_store.append(record)
+
+
+def _refine_crystal_properties_type(calc_dir: Path, output_path: Path) -> str:
+    """Refine a CRYSTAL ``properties`` calc_type into a specific subtype.
+
+    Detection order (first match wins):
+    1. ``SEEBECK.DAT`` / ``SIGMA.DAT`` / ``KAPPA.DAT`` / ``TDF.DAT`` present -> ``transport``
+    2. ``PHONON.DAT`` / ``FREQ.DAT`` present, or ``FREQCALC`` / ``FREQUENCY CALCULATION``
+       in the OUTPUT text -> ``phonon``
+    3. ``ELASTIC.DAT`` present, or ``ELASTIC`` in the OUTPUT text -> ``elastic``
+    4. ``BAND.DAT`` / ``DOSS.DAT`` present -> ``electron``
+    5. otherwise ``properties`` (unchanged)
+    """
+    try:
+        names = set(p.name.upper() for p in calc_dir.iterdir() if p.is_file())
+    except Exception:
+        names = set()
+
+    transport_files = {"SEEBECK.DAT", "SIGMA.DAT", "KAPPA.DAT", "TDF.DAT", "SIGMAS.DAT"}
+    if names & transport_files:
+        return "transport"
+    if {"PHONON.DAT", "FREQ.DAT"} & names:
+        return "phonon"
+    if "ELASTIC.DAT" in names:
+        return "elastic"
+    if {"BAND.DAT", "DOSS.DAT"} & names:
+        return "electron"
+
+    try:
+        text = output_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return "properties"
+    if "FREQCALC" in text or "FREQUENCY CALCULATION" in text:
+        return "phonon"
+    if "ELASTIC" in text:
+        return "elastic"
+    return "properties"
+
+
 def scan_calculations(
     root_dir: Path,
     aiida: bool = False,
@@ -213,7 +335,7 @@ def scan_calculations(
     skip_errors: bool = False,
     calculation_type: str = "all",
     engine_type: str | None = None,
-) -> tuple[list[dict[str, Any]], dict, dict]:
+) -> tuple[list[dict[str, Any]], dict, dict, list[dict[str, Any]]]:
     """
     Go through directory tree, parse outputs and generate error reports.
 
@@ -225,6 +347,8 @@ def scan_calculations(
     - skip_errors: Whether to skip entries with parsing errors in the summary.
     - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
     - engine_type: Filter by engine: None (all), "crystal", or "fleur".
+
+    Returns a 4-tuple ``(summary_store, error_dict_crystal, error_dict_fleur, phonon_store)``.
     """
     root_path = Path(root_dir).resolve()
 
@@ -235,6 +359,7 @@ def scan_calculations(
     summary_store: list[dict[str, Any]] = []
     error_dict_crystal: dict = {}
     error_dict_fleur: dict = {}
+    phonon_store: list[dict[str, Any]] = []
 
     for dirpath, dirnames, filenames in os.walk(root_path, topdown=False):
         current_dir = Path(dirpath)
@@ -263,6 +388,13 @@ def scan_calculations(
             if calc_type == "scf" and summary.get("optgeom") is True:
                 calc_type = "optimise"
 
+            if calc_type == "properties":
+                calc_type = _refine_crystal_properties_type(current_dir, output_path)
+            elif calc_type == "scf":
+                refined = _refine_crystal_properties_type(current_dir, output_path)
+                if refined != "properties":
+                    calc_type = refined
+
             if calculation_type != "all" and calc_type != calculation_type:
                 continue
 
@@ -275,6 +407,7 @@ def scan_calculations(
             if skip_errors and math.isnan(summary.get('duration', float('nan'))):
                 continue
             summary_store.append(summary)
+            _enrich_summary_with_phonons(summary, current_dir, phonon_store, engine="crystal")
             if verbose:
                 print(f"{engine.upper()} OUTPUT FOUND IN {output_path}")
                 print(get_table_string(summary))
@@ -284,6 +417,7 @@ def scan_calculations(
                 continue
             output_path = current_dir / ("out.xml" if "out.xml" in filenames else "out")
             summary = parse_fleur_output(output_path)
+            summary.setdefault("temperature_k", 0.0)
             summary["output_path"] = str(output_path)
             summary["engine"] = engine
             fleur_modes = summary.get("fleur_modes", {})
@@ -299,6 +433,7 @@ def scan_calculations(
             if skip_errors and math.isnan(summary.get('duration', float('nan'))):
                 continue
             summary_store.append(summary)
+            _enrich_summary_with_phonons(summary, current_dir, phonon_store, engine="fleur")
             if verbose:
                 print(f"{engine.upper()} OUTPUT FOUND IN {output_path}")
                 print(get_table_string(summary))
@@ -322,7 +457,7 @@ def scan_calculations(
                 if sq is not None and not (isinstance(sq, float) and math.isnan(sq)) and float(sq) > 0.001:
                     summary["calc_type"] = "optimise"
 
-    return summary_store, error_dict_crystal, error_dict_fleur
+    return summary_store, error_dict_crystal, error_dict_fleur, phonon_store
 
 
 def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
@@ -353,12 +488,31 @@ def find_calculation_by_uuid(root_dir: Path, uuid: str) -> Path:
     raise FileNotFoundError(f"Calculation with UUID {uuid} not found in {root_path}")
 
 
+def _passes_strict_filter(summary: dict) -> bool:
+    """Strict inclusion filter for the CSV table.
+
+    Drops a calculation when:
+    - ``exit_status`` is present and non-zero (failed calc), or
+    - ``chemical_formula`` is missing/empty (no usable structure).
+
+    Dropped rows stay in the JSON dump and error reports for audit.
+    """
+    es = summary.get("exit_status")
+    if es is not None and es != 0:
+        return False
+    if not summary.get("chemical_formula"):
+        return False
+    return True
+
+
 def save_reports(
     root_path: Path,
     summary_store: list[dict],
     error_dict_crystal: dict,
     error_dict_fleur: dict,
+    phonon_store: list[dict] | None = None,
     output_dir: Path | None = None,
+    strict_filter: bool = True,
 ) -> None:
     time_now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     save_dir = Path(output_dir) if output_dir else root_path.parent
@@ -371,37 +525,83 @@ def save_reports(
         return json.dumps(v)
 
     if summary_store:
-        nested_keys = ["cell", "positions", "pbc", "numbers", "symbols", "bandgap", "space_group"]
-        _DROP_KEYS = {
-            "techs_1_FMIXING", "techs_2", "optgeom", "num_opt_cycles",
-            "MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK",
-            "t1", "t5", "k", "H", "smear", "spin", "TOLINTEG",
-        }
-        flat_summary = []
+        # JSON keeps the full nested structure (cell, positions, ...) for audit.
+        json_path = save_dir / f"summary_{time_now}.json"
+        with open(json_path, "w") as f:
+            json.dump(summary_store, f, indent=2, default=str)
+        print(f"Summary JSON saved to: {json_path}")
 
-        for row in summary_store:
+        if strict_filter:
+            before = len(summary_store)
+            csv_store = [s for s in summary_store if _passes_strict_filter(s)]
+            dropped = before - len(csv_store)
+            if dropped:
+                print(f"Strict filter: dropped {dropped} rows (no formula or exit_status != 0) from CSV")
+        else:
+            csv_store = list(summary_store)
+
+        if not csv_store:
+            print("No rows passed the strict filter; CSV not written.")
+        else:
+            # CSV: drop verbose/redundant keys (kept in JSON for audit).
+            # cell -> a,b,c,alpha,beta,gamma columns; numbers/symbols ->
+            # composition_n_atoms; positions too verbose.
+            _CSV_NESTED = ["pbc", "bandgap", "space_group", "q_point"]
+            _CSV_DROP_KEYS = {
+                "techs_1_FMIXING", "techs_2", "optgeom", "num_opt_cycles",
+                "MAXCYCLE", "TOLDEE", "TOLLDENS", "TOLLGRID", "SHRINK",
+                "t1", "t5", "k", "H", "smear", "spin", "TOLINTEG",
+                "positions", "cell", "numbers", "symbols", "mpds_id",
+            }
+            flat_summary = []
+            for row in csv_store:
+                try:
+                    row = dict(row)
+                    for dk in _CSV_DROP_KEYS:
+                        row.pop(dk, None)
+                    nullify_right_angles(row)
+                    for k in _CSV_NESTED:
+                        if k in row:
+                            try:
+                                row[k] = _serialize_nested(row[k])
+                            except Exception:
+                                row[k] = None
+                    flat_summary.append(row)
+                except Exception:
+                    continue
+
+            if flat_summary:
+                df = pl.DataFrame(flat_summary)
+                _drop_cols = {"positions", "cell", "numbers", "symbols", "mpds_id"}
+                df = df.drop(
+                    [col for col in df.columns if col in _drop_cols or df[col].null_count() == df.height]
+                )
+                df.write_csv(save_dir / f"summary_{time_now}.csv")
+                print(f"Summary CSV saved to: {save_dir / f'summary_{time_now}.csv'}")
+
+    if phonon_store:
+        phonon_flat: list[dict] = []
+        phonon_nested_keys = ["q_point"]
+        for row in phonon_store:
             try:
                 row = dict(row)
-                for dk in _DROP_KEYS:
-                    row.pop(dk, None)
-                for k in nested_keys:
+                for k in phonon_nested_keys:
                     if k in row:
                         try:
                             row[k] = _serialize_nested(row[k])
                         except Exception:
                             row[k] = None
-                flat_summary.append(row)
+                phonon_flat.append(row)
             except Exception:
                 continue
-
-        if flat_summary:
-            df = pl.DataFrame(flat_summary)
-            df.write_csv(save_dir / f"summary_{time_now}.csv")
-
-            json_path = save_dir / f"summary_{time_now}.json"
-            with open(json_path, "w") as f:
-                json.dump(flat_summary, f, indent=2, default=str)
-            print(f"Summary JSON saved to: {json_path}")
+        if phonon_flat:
+            try:
+                phonon_df = pl.DataFrame(phonon_flat)
+                phonon_csv = save_dir / f"phonon_summary_{time_now}.csv"
+                phonon_df.write_csv(phonon_csv)
+                print(f"Phonon summary CSV saved to: {phonon_csv}")
+            except Exception as e:
+                print(f"Failed to write phonon_summary CSV: {e}")
 
     if error_dict_fleur:
         print_report_fleur(error_dict_fleur)
@@ -498,7 +698,7 @@ def generate_report_for_uuid(root_dir: Path, uuid: str) -> dict:
         return None
 
 
-def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "all", output_dir: Path | None = None, engine_type: str | None = None, from_date: str | None = None) -> None:
+def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool = False, calculation_type: str = "all", output_dir: Path | None = None, engine_type: str | None = None, from_date: str | None = None, strict_filter: bool = True) -> None:
     """
     Scan a calculation tree, print a short summary to stdout
     and save a summary CSV plus error reports.
@@ -508,6 +708,8 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
     - calculation_type: Filter by calculation type: "all", "optimise", "scf", "properties".
     - engine_type: Filter by engine: None (all), "crystal", or "fleur".
     - from_date: Only include calculations modified on or after this date (YYYY-MM-DD).
+    - strict_filter: When True (default), drop rows with exit_status != 0 or no
+      chemical_formula from the CSV only (JSON keeps everything).
     """
     root_path = Path(root_dir).resolve()
     if not root_path.exists():
@@ -520,7 +722,7 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
     print("GENERATING REPORTS FOR ALL CALCULATIONS")
     print("=" * 60 + "\n")
 
-    summary_store, err_cr, err_fl = scan_calculations(
+    summary_store, err_cr, err_fl, phonon_store = scan_calculations(
         root_path,
         aiida=aiida,
         verbose=True,
@@ -537,7 +739,7 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
             if s.get("calc_date") and datetime.strptime(s["calc_date"], "%Y-%m-%d %H:%M:%S") >= cutoff
         ]
 
-    save_reports(root_path, summary_store, err_cr, err_fl, output_dir=save_dir)
+    save_reports(root_path, summary_store, err_cr, err_fl, phonon_store=phonon_store, output_dir=save_dir, strict_filter=strict_filter)
 
     print("\n" + "=" * 60)
     print("REPORTS GENERATION COMPLETE")
@@ -546,8 +748,8 @@ def generate_reports_only(root_dir: Path, aiida: bool = False, skip_errors: bool
 
 if __name__ == "__main__":
 
-    # summary_store, err_cr, err_fl = scan_calculations(Path("/data/aiida"), aiida=True, verbose=True)
+    # summary_store, err_cr, err_fl, phonon_store = scan_calculations(Path("/data/aiida"), aiida=True, verbose=True)
     # root_path = Path("./")
-    # save_reports(root_path, summary_store, err_cr, err_fl)
+    # save_reports(root_path, summary_store, err_cr, err_fl, phonon_store=phonon_store)
 
     generate_reports_only(Path("/root/projects/dft_organizer/dft_organizer/fleur_data_part"), aiida=True, skip_errors=True)
