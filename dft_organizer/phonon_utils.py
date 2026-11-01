@@ -48,8 +48,14 @@ def extract_frequencies_from_workchain(
     pk: int,
     mesh: list[int] | None = None,
     threshold: float = DEFAULT_THRESHOLD_CM1,
+    *,
+    force_constants_override: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """Extract phonon frequencies from a PhonopyFleurWorkChain."""
+    """Extract frequencies, optionally using explicitly reconstructed force constants.
+
+    An override does not modify stored AiiDA outputs. Callers must preserve
+    the reconstruction provenance alongside the resulting report.
+    """
     if mesh is None:
         mesh = DEFAULT_MESH
 
@@ -80,6 +86,21 @@ def extract_frequencies_from_workchain(
     )
 
     ph = Phonopy(unitcell, supercell_matrix=supercell_matrix, factor=VaspToCm)
+    if force_constants_override is not None:
+        replacement = np.asarray(force_constants_override, dtype=float)
+        n_supercell = len(ph.supercell)
+        expected_shapes = {
+            (n_supercell, n_supercell, 3, 3),
+            (len(ph.primitive), n_supercell, 3, 3),
+        }
+        if (
+            replacement.shape not in expected_shapes
+            or not np.isfinite(replacement).all()
+        ):
+            raise ValueError(
+                "Replacement force constants must be finite and match the primitive/supercell dimensions"
+            )
+        fc = replacement.copy()
     ph.force_constants = fc
     ph.symmetrize_force_constants()
 
@@ -412,6 +433,8 @@ def get_phonon_workchain_summary(
     t_eval: int = 300,
     provider: str | None = None,
     machine_type: str | None = None,
+    *,
+    force_constants_override: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Get full phonon summary for a single PhonopyFleurWorkChain."""
     from aiida.orm import load_node
@@ -484,7 +507,9 @@ def get_phonon_workchain_summary(
         "gamma": round(cellpar[5], 6),
     }
 
-    freq_data = extract_frequencies_from_workchain(pk, mesh=mesh)
+    freq_data = extract_frequencies_from_workchain(
+        pk, mesh=mesh, force_constants_override=force_constants_override
+    )
     if "error" in freq_data:
         summary["error"] = freq_data["error"]
         summary["n_imaginary"] = None
