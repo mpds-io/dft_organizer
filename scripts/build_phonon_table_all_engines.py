@@ -11,6 +11,11 @@ from the corrected audit npz given via --yalo3-fc. The MgO/225 ABACUS run
 (pk 141508) stored compact force constants, which the summary path rejects,
 so they are symmetrized to the full form first.
 
+The CaTiO3/62 FLEUR reference exists only as the manual October force set
+(pks 136166/136167), assembled by hand from converged FLEUR SCFs on the
+same structure and displacement grid as the ABACUS phase. The regular FLEUR
+workchain scan does not see it, so its row is built from that data directly.
+
 Usage:
     python scripts/build_phonon_table_all_engines.py \
         [--output-dir PATH] [--yalo3-fc PATH] [--yalo3-audit PATH]
@@ -52,6 +57,100 @@ COMPOUNDS = [
 FROM_DATE = "2026-08-01"
 YALO3_PK = 137662
 MGO_PK = 141508
+CATIO3_PHONOPY_PK = 136166
+CATIO3_FC_PK = 136167
+
+
+def manual_catio3_fleur_row(t_max, t_step, t_min, method, t_eval):
+    """Summary row for the manual October FLEUR CaTiO3/62 force set."""
+    from aiida.orm import load_node
+    from ase.geometry import cell_to_cellpar
+    from phonopy import Phonopy
+
+    from dft_organizer.phonon_utils import (
+        DEFAULT_MESH,
+        DEFAULT_THRESHOLD_CM1,
+        VaspToCm,
+        compute_pearson_symbol,
+        extract_gamma_freqs,
+        get_mpds_phonon_reference,
+        integrate_frequencies,
+    )
+
+    inst = load_node(CATIO3_PHONOPY_PK).get_phonopy_instance()
+    inst.produce_force_constants()
+    unitcell = inst.unitcell
+
+    ph = Phonopy(
+        unitcell,
+        supercell_matrix=inst.supercell_matrix,
+        factor=VaspToCm,
+    )
+    ph.force_constants = inst.force_constants
+    ph.symmetrize_force_constants()
+    ph.run_mesh(DEFAULT_MESH)
+    mesh_data = ph.get_mesh_dict()
+    freqs = np.array(mesh_data["frequencies"])
+    qpoints = np.array(mesh_data["qpoints"])
+    ph.run_qpoints([[0.0, 0.0, 0.0]])
+    gamma_freqs = np.array(ph.get_qpoints_dict()["frequencies"])[0]
+
+    fc_node = load_node(CATIO3_FC_PK)
+    cell = np.array(unitcell.cell)
+    positions = np.array(unitcell.scaled_positions)
+    numbers = np.array(unitcell.numbers)
+    cellpar = cell_to_cellpar(cell)
+    duration = None
+    if fc_node.ctime and fc_node.mtime:
+        duration = round((fc_node.mtime - fc_node.ctime).total_seconds() / 3600, 4)
+
+    summary = {
+        "pk": CATIO3_FC_PK,
+        "label": fc_node.label,
+        "engine": "fleur",
+        "exit_status": fc_node.exit_status,
+        "calc_date": fc_node.ctime.strftime("%Y-%m-%d %H:%M:%S"),
+        "duration": duration,
+        "chemical_formula": "CaTiO3",
+        "space_group": 62,
+        "pearson": compute_pearson_symbol(cell, positions, numbers),
+        "n_imaginary": int(np.sum(freqs < DEFAULT_THRESHOLD_CM1)),
+        "n_qpoints": int(freqs.shape[0]),
+        "n_bands": int(freqs.shape[1]),
+        "a": round(float(cellpar[0]), 6),
+        "b": round(float(cellpar[1]), 6),
+        "c": round(float(cellpar[2]), 6),
+        "alpha": round(float(cellpar[3]), 6),
+        "beta": round(float(cellpar[4]), 6),
+        "gamma": round(float(cellpar[5]), 6),
+    }
+
+    thermo = integrate_frequencies(
+        freqs,
+        t_max=t_max,
+        t_step=t_step,
+        t_min=t_min,
+        method=method,
+        t_eval=t_eval,
+    )
+    summary["zpe_kjmol"] = thermo["zpe_kjmol"]
+    summary["f_at_t_kjmol"] = thermo["f_at_t_kjmol"]
+    summary["s_at_t_jkmol"] = thermo["s_at_t_jkmol"]
+    summary["cv_at_t_jkmol"] = thermo["cv_at_t_jkmol"]
+    summary["t_eval"] = t_eval
+
+    gamma_opt = extract_gamma_freqs(freqs, qpoints=qpoints, gamma_freqs_cm1=gamma_freqs)
+    for i in range(12):
+        summary[f"gamma_opt_{i + 1}_cm1"] = (
+            round(gamma_opt[i], 2) if i < len(gamma_opt) else None
+        )
+    summary["gamma_n_optical"] = len(gamma_opt)
+
+    mpds = get_mpds_phonon_reference("CaTiO3", 62)
+    summary["mpds_lo_cm1"] = ", ".join(f"{v:.1f}" for v in mpds["lo_cm1"]) or None
+    summary["mpds_to_cm1"] = ", ".join(f"{v:.1f}" for v in mpds["to_cm1"]) or None
+    summary["mpds_n_entries"] = mpds["n_entries"]
+    return summary
 
 
 def main():
@@ -116,6 +215,13 @@ def main():
         summary["force_constants_source"] = "stored compact FC expanded to full form"
         store.append(summary)
         print(f"MgO pk {MGO_PK}: rebuilt from compact force constants")
+
+    store.append(
+        manual_catio3_fleur_row(
+            t_max=1000, t_step=100, t_min=0, method="custom", t_eval=300
+        )
+    )
+    print(f"CaTiO3 manual FLEUR reference pk {CATIO3_FC_PK}: added")
 
     for row in store:
         if row.get("engine") == "abacus":
