@@ -336,6 +336,8 @@ def _engine_from_process_type(process_type: str | None) -> str | None:
         return "crystal"
     if "fleur" in pt:
         return "fleur"
+    if "abacus" in pt:
+        return "abacus"
     return None
 
 
@@ -548,25 +550,32 @@ def scan_aiida_calculations(
             summary_store, fleur_uuids, skip_displacement=skip_displacement
         )
 
-    # Add FLEUR PhonopyFleurWorkChain nodes as phonon rows
+    # Add Phonopy*WorkChain nodes as phonon rows
     # (WorkChainNode, not CalcJobNode — missed by the main query)
     from aiida.orm import WorkChainNode as _WCN
 
-    wc_filters: dict[str, Any] = {"process_type": {"like": "%phonopy.fleur%"}}
+    wc_filters: dict[str, Any] = {
+        "process_type": {
+            "or": [
+                {"like": "%phonopy.fleur%"},
+                {"like": "%phonopy.abacus%"},
+            ]
+        }
+    }
     if date_filter:
         wc_filters["ctime"] = date_filter
     qb_wc = QueryBuilder()
     qb_wc.append(
         _WCN,
         filters=wc_filters,
-        project=["id", "label", "uuid", "attributes", "ctime", "mtime"],
+        project=["id", "label", "uuid", "attributes", "ctime", "mtime", "process_type"],
     )
     wc_rows = list(qb_wc.iterall())
     if wc_rows:
-        print(f"Found {len(wc_rows)} FLEUR phonon WorkChains.")
+        print(f"Found {len(wc_rows)} phonon WorkChains.")
         existing_uuids = {s["uuid"] for s in summary_store}
         added = 0
-        for wc_pk, wc_label, wc_uuid, wc_attrs, wc_ctime, wc_mtime in wc_rows:
+        for wc_pk, wc_label, wc_uuid, wc_attrs, wc_ctime, wc_mtime, wc_ptype in wc_rows:
             if wc_uuid in existing_uuids:
                 continue
             wc_exit = wc_attrs.get("exit_status") if wc_attrs else None
@@ -575,11 +584,12 @@ def scan_aiida_calculations(
             wc_dur = None
             if wc_ctime and wc_mtime:
                 wc_dur = round((wc_mtime - wc_ctime).total_seconds() / 3600, 4)
+            wc_engine = _engine_from_process_type(wc_ptype) or "fleur"
             summary_store.append(
                 {
                     "uuid": wc_uuid,
                     "label": wc_label,
-                    "engine": "fleur",
+                    "engine": wc_engine,
                     "calc_type": "phonon",
                     "chemical_formula": _formula_from_label(wc_label),
                     "space_group": _sgs_from_workchain_label(wc_label),
@@ -600,7 +610,7 @@ def scan_aiida_calculations(
                 summary_store[-1][k] = None
             added += 1
         if added:
-            print(f"  Added {added} FLEUR phonon WorkChain rows.")
+            print(f"  Added {added} phonon WorkChain rows.")
 
     phonon_rows = [s for s in summary_store if s.get("calc_type") == "phonon"]
     if phonon_rows:

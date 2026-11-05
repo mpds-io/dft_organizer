@@ -25,6 +25,46 @@ _CRYSTAL_SYSTEMS = {
 }
 
 
+# Verified against the campaign force-order audit (2026-11-01).
+INVALID_PHONON_RESULTS = {
+    "500a10b7-9019-4bf3-be17-9ca1d2a56b20":
+        "Stored force constants use incorrect atom order; audited replacement required",
+}
+
+
+def validate_phonon_result(node, force_constants_override=None):
+    reason = INVALID_PHONON_RESULTS.get(str(getattr(node, "uuid", "")))
+    if reason and force_constants_override is None:
+        raise ValueError(f"Invalid phonon result {node.uuid}: {reason}")
+
+
+def load_audited_force_constants(node, fc_path, audit_path):
+    """Require source UUID, exact artifact path and SHA256 before using an NPZ."""
+    import hashlib
+    import json
+    from pathlib import Path
+
+    fc_path = Path(fc_path).resolve()
+    audit_path = Path(audit_path).resolve()
+    rows = json.loads(audit_path.read_text())
+    matches = [row for row in rows if row.get("source_phonon_uuid") == str(node.uuid)
+               and row.get("force_order_corrected") is True]
+    if len(matches) != 1:
+        raise ValueError("Audit must identify exactly one corrected source UUID")
+    row = matches[0]
+    recorded = Path(row["reconstructed_force_constants_file"])
+    # Campaign artifacts record paths relative to the project root.
+    if not recorded.is_absolute():
+        recorded = audit_path.parent.parent / recorded
+    if recorded.resolve() != fc_path:
+        raise ValueError("Audit force constants path does not match NPZ")
+    digest = hashlib.sha256(fc_path.read_bytes()).hexdigest()
+    if row.get("reconstructed_force_constants_sha256") != digest:
+        raise ValueError("Audit force constants SHA256 missing or mismatched")
+    with np.load(fc_path, allow_pickle=False) as data:
+        return data["force_constants"].copy()
+
+
 def _crystal_letter(spg: int) -> str:
     for (lo, hi), letter in _CRYSTAL_SYSTEMS.items():
         if lo <= spg <= hi:
@@ -48,8 +88,14 @@ def extract_frequencies_from_workchain(
     pk: int,
     mesh: list[int] | None = None,
     threshold: float = DEFAULT_THRESHOLD_CM1,
+    *,
+    force_constants_override: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """Extract phonon frequencies from a PhonopyFleurWorkChain."""
+    """Extract frequencies, optionally using explicitly reconstructed force constants.
+
+    An override does not modify stored AiiDA outputs. Callers must preserve
+    the reconstruction provenance alongside the resulting report.
+    """
     if mesh is None:
         mesh = DEFAULT_MESH
 
@@ -58,6 +104,7 @@ def extract_frequencies_from_workchain(
     from phonopy.structure.atoms import PhonopyAtoms
 
     wc = load_node(pk)
+    validate_phonon_result(wc, force_constants_override)
     has_fc = False
     try:
         has_fc = wc.outputs.output_phonopy.output_force_constants is not None
@@ -80,6 +127,21 @@ def extract_frequencies_from_workchain(
     )
 
     ph = Phonopy(unitcell, supercell_matrix=supercell_matrix, factor=VaspToCm)
+    if force_constants_override is not None:
+        replacement = np.asarray(force_constants_override, dtype=float)
+        n_supercell = len(ph.supercell)
+        expected_shapes = {
+            (n_supercell, n_supercell, 3, 3),
+            (len(ph.primitive), n_supercell, 3, 3),
+        }
+        if (
+            replacement.shape not in expected_shapes
+            or not np.isfinite(replacement).all()
+        ):
+            raise ValueError(
+                "Replacement force constants must be finite and match the primitive/supercell dimensions"
+            )
+        fc = replacement.copy()
     ph.force_constants = fc
     ph.symmetrize_force_constants()
 
@@ -412,11 +474,14 @@ def get_phonon_workchain_summary(
     t_eval: int = 300,
     provider: str | None = None,
     machine_type: str | None = None,
+    *,
+    force_constants_override: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Get full phonon summary for a single PhonopyFleurWorkChain."""
     from aiida.orm import load_node
 
     wc = load_node(pk)
+    validate_phonon_result(wc, force_constants_override)
     exit_status = wc.exit_status
 
     structure = wc.inputs.structure
@@ -484,7 +549,9 @@ def get_phonon_workchain_summary(
         "gamma": round(cellpar[5], 6),
     }
 
-    freq_data = extract_frequencies_from_workchain(pk, mesh=mesh)
+    freq_data = extract_frequencies_from_workchain(
+        pk, mesh=mesh, force_constants_override=force_constants_override
+    )
     if "error" in freq_data:
         summary["error"] = freq_data["error"]
         summary["n_imaginary"] = None
@@ -770,6 +837,21 @@ def scan_phonon_workchains(
     fleur_rows = list(qb.iterall())
     print(f"Found {len(fleur_rows)} FLEUR phonon WorkChains.")
 
+    # --- ABACUS: PhonopyAbacusWorkChain ---
+    abacus_filters: dict[str, Any] = {"process_type": {"like": "%phonopy.abacus%"}}
+    if date_filter:
+        abacus_filters["ctime"] = date_filter
+
+    print("Querying AiiDA for PhonopyAbacusWorkChain nodes...")
+    qb_abacus = QueryBuilder()
+    qb_abacus.append(
+        WorkChainNode,
+        filters=abacus_filters,
+        project=["id", "label", "attributes", "ctime", "mtime"],
+    )
+    abacus_rows = list(qb_abacus.iterall())
+    print(f"Found {len(abacus_rows)} ABACUS phonon WorkChains.")
+
     # --- CRYSTAL: CalcJobNode with "phonon" in label ---
     crystal_filters: dict[str, Any] = {
         "process_type": {"like": "%crystal%"},
@@ -790,11 +872,13 @@ def scan_phonon_workchains(
     # Filter by exit_status
     if skip_errors:
         fleur_rows = [r for r in fleur_rows if r[2] and r[2].get("exit_status") == 0]
+        abacus_rows = [r for r in abacus_rows if r[2] and r[2].get("exit_status") == 0]
         crystal_rows = [
             r for r in crystal_rows if r[2] and r[2].get("exit_status") == 0
         ]
         print(
-            f"After skip_errors: {len(fleur_rows)} FLEUR, {len(crystal_rows)} CRYSTAL."
+            f"After skip_errors: {len(fleur_rows)} FLEUR, {len(abacus_rows)} ABACUS, "
+            f"{len(crystal_rows)} CRYSTAL."
         )
 
     summary_store = []
@@ -829,6 +913,37 @@ def scan_phonon_workchains(
         done += 1
         if done % 5 == 0 or done == len(fleur_rows):
             print(f"  FLEUR: {done}/{len(fleur_rows)}")
+
+    # Process ABACUS
+    done = 0
+    for pk, label, attrs, ctime, mtime in abacus_rows:
+        try:
+            summary = get_phonon_workchain_summary(
+                pk,
+                mesh=mesh,
+                t_max=t_max,
+                t_step=t_step,
+                t_min=t_min,
+                method=method,
+                t_eval=t_eval,
+                provider=provider,
+                machine_type=machine_type,
+            )
+            summary["engine"] = "abacus"
+            summary_store.append(summary)
+        except Exception as e:
+            summary_store.append(
+                {
+                    "pk": pk,
+                    "label": label,
+                    "engine": "abacus",
+                    "exit_status": attrs.get("exit_status") if attrs else None,
+                    "error": str(e),
+                }
+            )
+        done += 1
+        if done % 5 == 0 or done == len(abacus_rows):
+            print(f"  ABACUS: {done}/{len(abacus_rows)}")
 
     # Process CRYSTAL
     done = 0
