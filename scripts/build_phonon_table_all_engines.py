@@ -55,7 +55,7 @@ COMPOUNDS = [
     "MgO",
 ]
 FROM_DATE = "2026-08-01"
-YALO3_PK = 137662
+YALO3_UUID = "500a10b7-9019-4bf3-be17-9ca1d2a56b20"
 MGO_PK = 141508
 CATIO3_PHONOPY_PK = 136166
 CATIO3_FC_PK = 136167
@@ -171,6 +171,9 @@ def main():
     from aiida import load_profile
 
     load_profile()
+    from aiida.orm import load_node
+
+    yalo3_pk = load_node(YALO3_UUID).pk
 
     from dft_organizer.aiida.reporting import save_aiida_phonon_reports
     from dft_organizer.phonon_utils import (
@@ -184,22 +187,29 @@ def main():
     store = [row for row in store if row.get("chemical_formula") in COMPOUNDS]
     print(f"allowlist: {before} -> {len(store)} rows")
 
-    if YALO3_PK in scanned_pks:
+    if yalo3_pk in scanned_pks:
         if args.yalo3_fc is None or not args.yalo3_fc.is_file():
             raise SystemExit(
-                f"YAlO3 pk {YALO3_PK} needs the corrected force constants: "
+                f"YAlO3 pk {yalo3_pk} needs the corrected force constants: "
                 "pass --yalo3-fc <npz>"
             )
-        store = [row for row in store if row.get("pk") != YALO3_PK]
-        fc = np.load(args.yalo3_fc)["force_constants"]
-        summary = get_phonon_workchain_summary(YALO3_PK, force_constants_override=fc)
+        store = [row for row in store if row.get("pk") != yalo3_pk]
+        if args.yalo3_audit is None:
+            raise SystemExit("Corrected force constants require --yalo3-audit")
+        from aiida.orm import load_node
+        from dft_organizer.phonon_utils import load_audited_force_constants
+
+        fc = load_audited_force_constants(
+            load_node(yalo3_pk), args.yalo3_fc, args.yalo3_audit
+        )
+        summary = get_phonon_workchain_summary(yalo3_pk, force_constants_override=fc)
         summary["engine"] = "abacus"
         summary["force_order_corrected"] = True
         if args.yalo3_audit is not None:
             summary["force_order_audit"] = str(args.yalo3_audit)
         summary["force_constants_source"] = str(args.yalo3_fc)
         store.append(summary)
-        print(f"YAlO3 pk {YALO3_PK}: rebuilt with corrected force constants")
+        print(f"YAlO3 pk {yalo3_pk}: rebuilt with corrected force constants")
 
     if MGO_PK in scanned_pks:
         from aiida.orm import load_node

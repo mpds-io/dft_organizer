@@ -25,6 +25,46 @@ _CRYSTAL_SYSTEMS = {
 }
 
 
+# Verified against the campaign force-order audit (2026-11-01).
+INVALID_PHONON_RESULTS = {
+    "500a10b7-9019-4bf3-be17-9ca1d2a56b20":
+        "Stored force constants use incorrect atom order; audited replacement required",
+}
+
+
+def validate_phonon_result(node, force_constants_override=None):
+    reason = INVALID_PHONON_RESULTS.get(str(getattr(node, "uuid", "")))
+    if reason and force_constants_override is None:
+        raise ValueError(f"Invalid phonon result {node.uuid}: {reason}")
+
+
+def load_audited_force_constants(node, fc_path, audit_path):
+    """Require source UUID, exact artifact path and SHA256 before using an NPZ."""
+    import hashlib
+    import json
+    from pathlib import Path
+
+    fc_path = Path(fc_path).resolve()
+    audit_path = Path(audit_path).resolve()
+    rows = json.loads(audit_path.read_text())
+    matches = [row for row in rows if row.get("source_phonon_uuid") == str(node.uuid)
+               and row.get("force_order_corrected") is True]
+    if len(matches) != 1:
+        raise ValueError("Audit must identify exactly one corrected source UUID")
+    row = matches[0]
+    recorded = Path(row["reconstructed_force_constants_file"])
+    # Campaign artifacts record paths relative to the project root.
+    if not recorded.is_absolute():
+        recorded = audit_path.parent.parent / recorded
+    if recorded.resolve() != fc_path:
+        raise ValueError("Audit force constants path does not match NPZ")
+    digest = hashlib.sha256(fc_path.read_bytes()).hexdigest()
+    if row.get("reconstructed_force_constants_sha256") != digest:
+        raise ValueError("Audit force constants SHA256 missing or mismatched")
+    with np.load(fc_path, allow_pickle=False) as data:
+        return data["force_constants"].copy()
+
+
 def _crystal_letter(spg: int) -> str:
     for (lo, hi), letter in _CRYSTAL_SYSTEMS.items():
         if lo <= spg <= hi:
@@ -64,6 +104,7 @@ def extract_frequencies_from_workchain(
     from phonopy.structure.atoms import PhonopyAtoms
 
     wc = load_node(pk)
+    validate_phonon_result(wc, force_constants_override)
     has_fc = False
     try:
         has_fc = wc.outputs.output_phonopy.output_force_constants is not None
@@ -440,6 +481,7 @@ def get_phonon_workchain_summary(
     from aiida.orm import load_node
 
     wc = load_node(pk)
+    validate_phonon_result(wc, force_constants_override)
     exit_status = wc.exit_status
 
     structure = wc.inputs.structure
